@@ -1,0 +1,78 @@
+[
+  {
+    "iteration": 500,
+    "sparsity": 0.6182569138547207
+  },
+  {
+    "iteration": 1000,
+    "sparsity": 0.7364034449800532
+  },
+  {
+    "iteration": 1500,
+    "sparsity": 0.7753536143201463
+  },
+  {
+    "iteration": 2000,
+    "sparsity": 0.7800279982546543
+  },
+  {
+    "iteration": 2500,
+    "sparsity": 0.7930226427443484
+  },
+  {
+    "iteration": 3000,
+    "sparsity": 0.7945874802609707
+  },
+  {
+    "iteration": 3500,
+    "sparsity": 0.7985645050698138
+  },
+  {
+    "iteration": 4000,
+    "sparsity": 0.8030759121509309
+  },
+  {
+    "iteration": 4500,
+    "sparsity": 0.8043738831865027
+  },
+  {
+    "iteration": 5000,
+    "sparsity": 0.8069217763048537
+  },
+  {
+    "iteration": 5500,
+    "sparsity": 0.8095099266539229
+  },
+  {
+    "iteration": 6000,
+    "sparsity": 0.8108390645777925
+  },
+  {
+    "iteration": 6500,
+    "sparsity": 0.8115312292220744
+  },
+  {
+    "iteration": 7000,
+    "sparsity": 0.8167016861286569
+  },
+  {
+    "iteration": 7500,
+    "sparsity": 0.8152641134059175
+  },
+  {
+    "iteration": 8000,
+    "sparsity": 0.8164179375831117
+  },
+  {
+    "iteration": 8500,
+    "sparsity": 0.816004327002992
+  },
+  {
+    "iteration": 9500,
+    "sparsity": 0.8179327782164229
+  },
+  {
+    "iteration": 10000,
+    "sparsity": 0.8180210843999335
+  }
+]

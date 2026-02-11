@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 import torch
 
 # Import routes
-from backend.routes import inference, analysis, models, visualization
+from backend.routes import inference, analysis, models, visualization,graph as graph_routes
 
 
 # =============================================================================
@@ -162,6 +162,10 @@ app.include_router(
     prefix=f"{settings.API_PREFIX}/visualization",
     tags=["visualization"]
 )
+app.include_router(
+    graph_routes.router, 
+    prefix=f"{settings.API_PREFIX}/graph",
+      tags=["graph"])
 
 
 # =============================================================================
