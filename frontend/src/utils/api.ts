@@ -89,3 +89,24 @@ export async function loadPlaybackJSON(filename: string) {
 
 // Health check
 export const health = () => api.get("/health");
+
+ // Graph Brain endpoints
+export const graph = {
+  getClusters: (modelName: string, head = 0, beta = 1.0, maxNodes = 400) =>
+    api.get(`/graph/clusters/${modelName}`, {
+      params: { head, beta, max_nodes: maxNodes },
+      timeout: 60000,
+    }),
+
+  activate: (text: string, modelName = "french", head = 0, layer = -1) =>
+    api.post("/graph/activate", {
+      text,
+      model_name: modelName,
+      head,
+      layer,
+     }),
+
+  clearCache: () => api.delete("/graph/cache"),
+ };
+
+
