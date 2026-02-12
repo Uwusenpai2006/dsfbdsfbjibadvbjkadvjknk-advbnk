@@ -7,6 +7,60 @@ export const api = axios.create({
   timeout: 30000,
 });
 
+/* ------------------------------------------------------------------ */
+/*  Backend connection status (reactive)                               */
+/* ------------------------------------------------------------------ */
+type StatusListener = (connected: boolean) => void;
+const _listeners = new Set<StatusListener>();
+let _backendConnected = false;
+
+export function onBackendStatus(fn: StatusListener) {
+  _listeners.add(fn);
+  fn(_backendConnected); // notify immediately with current state
+  return () => _listeners.delete(fn);
+}
+export function isBackendConnected() {
+  return _backendConnected;
+}
+function _setConnected(v: boolean) {
+  if (v !== _backendConnected) {
+    _backendConnected = v;
+    _listeners.forEach((fn) => fn(v));
+  }
+}
+
+// Health-check poller — runs every 5 s, marks backend up/down
+let _polling = false;
+export function startHealthPoll() {
+  if (_polling) return;
+  _polling = true;
+  const poll = async () => {
+    try {
+      await axios.get("/health", { timeout: 4000 });
+      _setConnected(true);
+    } catch {
+      _setConnected(false);
+    }
+  };
+  poll(); // immediate first check
+  setInterval(poll, 5000);
+}
+
+// Axios interceptor — update status on every response / error
+api.interceptors.response.use(
+  (res) => {
+    _setConnected(true);
+    return res;
+  },
+  (err) => {
+    if (!err.response) {
+      // Network error (ECONNREFUSED, timeout, etc.)
+      _setConnected(false);
+    }
+    return Promise.reject(err);
+  },
+);
+
 // Inference endpoints
 export const inference = {
   run: (text: string, modelName = "french") =>
@@ -34,6 +88,17 @@ export const analysis = {
     modelName = "french",
   ) =>
     api.post("/analysis/probe-concept", {
+      concept_name: conceptName,
+      examples,
+      model_name: modelName,
+    }),
+
+  neuronFingerprint: (
+    conceptName: string,
+    examples: string[],
+    modelName = "french",
+  ) =>
+    api.post("/analysis/neuron-fingerprint", {
       concept_name: conceptName,
       examples,
       model_name: modelName,

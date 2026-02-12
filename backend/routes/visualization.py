@@ -71,6 +71,7 @@ async def generate_playback(request: PlaybackRequest, req: Request):
         capture_sparse_activations=True,
         capture_attention_patterns=request.include_attention,
         capture_pre_relu=True,
+        capture_residuals=True,
     )
     
     t1 = time.perf_counter()
@@ -110,6 +111,7 @@ async def generate_playback(request: PlaybackRequest, req: Request):
                     'y_pre_relu': y_pre,
                     'attention': attn_cpu,
                     'attention_output': attn_out_cpu,
+                    'residual': buffer.residuals[layer_idx][0, 0].cpu() if layer_idx in buffer.residuals else None,
                 }
             
             logits_cpu = logits[0].cpu()
@@ -376,6 +378,22 @@ async def generate_playback(request: PlaybackRequest, req: Request):
                 a_star_norm = round(float(np.linalg.norm(a_star_vec)), 3)
                 frame["a_star_ds"] = a_star_ds
                 frame["a_star_norm"] = a_star_norm
+            
+            # Decoder output Δv* (residual vector for current token, downsampled)
+            residual_vec = layer_data.get('residual')
+            if residual_vec is not None:
+                res_np = residual_vec[t].numpy()  # (D,)
+                ds_size = 64
+                D = len(res_np)
+                group = max(1, D // ds_size)
+                decoder_ds = [round(float(res_np[i*group:(i+1)*group].mean()), 4) for i in range(ds_size)]
+                decoder_norm = round(float(np.linalg.norm(res_np)), 3)
+                decoder_mean = round(float(res_np.mean()), 4)
+                decoder_std = round(float(res_np.std()), 4)
+                frame["decoder_ds"] = decoder_ds
+                frame["decoder_norm"] = decoder_norm
+                frame["decoder_mean"] = decoder_mean
+                frame["decoder_std"] = decoder_std
             
             frames.append(frame)
     

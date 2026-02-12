@@ -275,6 +275,153 @@ async def probe_concept(request: ConceptProbeRequest, req: Request):
     )
 
 
+@router.post("/neuron-fingerprint")
+async def neuron_fingerprint(request: ConceptProbeRequest, req: Request):
+    """
+    Return per-word neuron activation fingerprints with rich analytics.
+
+    Returns:
+    - Per-word x_sparse fingerprints (encoder path only — clean concept signal)
+    - Cosine similarity matrix between all word pairs
+    - Top-K most active neurons per word (actual indices)
+    - Shared neuron intersection data
+    """
+    model_service = req.app.state.model_service
+
+    try:
+        model = model_service.get_or_load(request.model_name)
+        config = model_service.get_config(request.model_name)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Model error: {e}")
+
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).parent.parent.parent / "training"))
+    from bdh import ExtractionConfig
+
+    n_layers = config.n_layer
+    n_heads = config.n_head
+    n_neurons = config.n_neurons
+
+    # ── Collect per-word activations ──
+    word_fingerprints = []
+    # raw_x[layer][head] = list of (N,) arrays, one per word
+    raw_x: Dict[int, Dict[int, list]] = {}
+
+    for text in request.examples:
+        tokens = torch.tensor(
+            [list(text.encode("utf-8"))],
+            dtype=torch.long,
+            device=model_service.device,
+        )
+        extraction_config = ExtractionConfig(
+            capture_sparse_activations=True,
+            capture_attention_patterns=False,
+        )
+
+        layers_data = []
+        with torch.no_grad():
+            with model.extraction_mode(extraction_config) as buffer:
+                _, _ = model(tokens)
+
+                for layer_idx in sorted(buffer.x_sparse.keys()):
+                    x = buffer.x_sparse[layer_idx][0]  # (nh, T, N)
+
+                    heads_data = []
+                    for h in range(n_heads):
+                        x_mean = x[h].mean(dim=0).cpu().numpy()  # (N,)
+
+                        # Downsample to 64 bins
+                        bins = 64
+                        stride = max(1, n_neurons // bins)
+                        x_ds = []
+                        for b in range(bins):
+                            start = b * stride
+                            end = min(start + stride, n_neurons)
+                            x_ds.append(float(x_mean[start:end].max()))
+
+                        x_active = int((x_mean > 0).sum())
+
+                        # Top-K neurons (actual indices)
+                        top_k = 20
+                        top_idx = np.argsort(x_mean)[-top_k:][::-1]
+                        top_neurons = [
+                            {"idx": int(i), "val": round(float(x_mean[i]), 5)}
+                            for i in top_idx if x_mean[i] > 0
+                        ]
+
+                        heads_data.append({
+                            "head": h,
+                            "x_ds": x_ds,
+                            "x_active": x_active,
+                            "top_neurons": top_neurons,
+                        })
+
+                        raw_x.setdefault(layer_idx, {}).setdefault(h, []).append(x_mean)
+
+                    layers_data.append({"layer": layer_idx, "heads": heads_data})
+
+        word_fingerprints.append({"word": text, "layers": layers_data})
+
+    # ── Cosine similarity matrix (per layer, averaged across heads) ──
+    n_words = len(request.examples)
+    similarity_by_layer: Dict[int, list] = {}
+
+    for layer_idx in sorted(raw_x.keys()):
+        sim_matrix = np.zeros((n_words, n_words))
+        for h in range(n_heads):
+            vecs = np.stack(raw_x[layer_idx][h])  # (n_words, N)
+            norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10
+            normed = vecs / norms
+            cos = normed @ normed.T  # (n_words, n_words)
+            sim_matrix += cos
+        sim_matrix /= n_heads
+        similarity_by_layer[layer_idx] = [
+            [round(float(sim_matrix[i][j]), 4) for j in range(n_words)]
+            for i in range(n_words)
+        ]
+
+    # ── Shared neurons: for each (layer, head), find neurons active in ALL words ──
+    shared_neurons = []
+    for layer_idx in sorted(raw_x.keys()):
+        for h in range(n_heads):
+            acts = np.stack(raw_x[layer_idx][h])  # (n_words, N)
+            # A neuron is "shared" if it fires (>0) in every word
+            active_mask = acts > 0  # (n_words, N)
+            all_active = active_mask.all(axis=0)  # (N,)
+            shared_idx = np.where(all_active)[0]
+
+            if len(shared_idx) > 0:
+                mean_vals = acts[:, shared_idx].mean(axis=0)
+                # Take top 5 by mean activation
+                sort_order = np.argsort(mean_vals)[::-1][:5]
+                for rank in sort_order:
+                    nidx = int(shared_idx[rank])
+                    shared_neurons.append({
+                        "layer": int(layer_idx),
+                        "head": int(h),
+                        "neuron": nidx,
+                        "mean_activation": round(float(mean_vals[rank]), 5),
+                        "active_in": n_words,
+                        # per-word activation for this specific neuron
+                        "per_word": [round(float(acts[w, nidx]), 5) for w in range(n_words)],
+                    })
+
+    shared_neurons.sort(key=lambda s: s["mean_activation"], reverse=True)
+
+    return {
+        "concept": request.concept_name,
+        "words": word_fingerprints,
+        "similarity": similarity_by_layer,
+        "shared_neurons": shared_neurons[:40],
+        "model_info": {
+            "n_layers": n_layers,
+            "n_heads": n_heads,
+            "n_neurons": n_neurons,
+        },
+    }
+
+
 @router.post("/compare")
 async def compare_models(request: CompareRequest, req: Request):
     """

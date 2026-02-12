@@ -16,6 +16,7 @@ import { usePlaybackStore } from "@/stores/playbackStore";
 // Must match STEPS in BDHArchitectureDiagram
 const NUM_ARCH_STEPS = 13; // 0..12
 const STEP_DURATION = 2000; // ms per architecture step
+const OUTPUT_DWELL = 500; // extra ms to hold on the final prediction step
 
 export function ArchitecturePage() {
   const [inputText, setInputText] = useState("The capital of France is Paris");
@@ -85,8 +86,29 @@ export function ArchitecturePage() {
 
     stepStartRef.current = Date.now();
     setStepProgress(0);
+    let dwelling = false;
+    let dwellStart = 0;
 
     timerRef.current = setInterval(() => {
+      // During dwell period, wait then advance
+      if (dwelling) {
+        if (Date.now() - dwellStart >= OUTPUT_DWELL) {
+          dwelling = false;
+          setCurrentTokenIdx((prevToken) => {
+            const nextToken = prevToken + 1;
+            if (nextToken >= numTokens) {
+              setIsPlaying(false);
+              return prevToken;
+            }
+            return nextToken;
+          });
+          setCurrentStep(0);
+          stepStartRef.current = Date.now();
+          setStepProgress(0);
+        }
+        return;
+      }
+
       const elapsed = Date.now() - stepStartRef.current;
       const progress = Math.min(elapsed / STEP_DURATION, 1);
       setStepProgress(progress);
@@ -96,19 +118,10 @@ export function ArchitecturePage() {
         setCurrentStep((prev) => {
           const nextStep = prev + 1;
           if (nextStep >= NUM_ARCH_STEPS) {
-            // All steps done for this token — advance token
-            setCurrentTokenIdx((prevToken) => {
-              const nextToken = prevToken + 1;
-              if (nextToken >= numTokens) {
-                // All tokens done — stop playing
-                setIsPlaying(false);
-                return prevToken;
-              }
-              return nextToken;
-            });
-            stepStartRef.current = Date.now();
-            setStepProgress(0);
-            return 0; // reset to step 0 for new token
+            // All steps done — enter dwell on output
+            dwelling = true;
+            dwellStart = Date.now();
+            return prev; // stay on output step during dwell
           }
           stepStartRef.current = Date.now();
           setStepProgress(0);
