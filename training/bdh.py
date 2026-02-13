@@ -569,15 +569,23 @@ def create_model(
 
 def load_model(checkpoint_path: str, device: str = "cpu") -> BDH:
     """Load a trained BDH model from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
     # Handle both full checkpoint and state_dict only
     if "config" in checkpoint:
         config = BDHConfig(**checkpoint["config"])
         state_dict = checkpoint["model_state_dict"]
     else:
+        state_dict = checkpoint
+        # Strip _orig_mod. prefix from torch.compile() wrapped models
+        stripped = {}
+        for k, v in state_dict.items():
+            new_k = k.replace("_orig_mod.", "") if k.startswith("_orig_mod.") else k
+            stripped[new_k] = v
+        state_dict = stripped
+
         # Infer config from state dict shapes
-        encoder_shape = checkpoint["encoder"].shape
+        encoder_shape = state_dict["encoder"].shape
         n_head = encoder_shape[0]
         n_embd = encoder_shape[1]
         N = encoder_shape[2]
@@ -593,10 +601,14 @@ def load_model(checkpoint_path: str, device: str = "cpu") -> BDH:
             n_head=n_head,
             mlp_internal_dim_multiplier=mlp_multiplier,
         )
-        state_dict = checkpoint
+    
+    # Strip _orig_mod. prefix in case it's in model_state_dict too
+    clean_sd = {}
+    for k, v in state_dict.items():
+        clean_sd[k.replace("_orig_mod.", "") if k.startswith("_orig_mod.") else k] = v
     
     model = BDH(config)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(clean_sd)
     model.to(device)
     model.eval()
     

@@ -108,6 +108,17 @@ export const analysis = {
     api.post("/analysis/compare", { text, model_names: modelNames }),
 
   getConceptCategories: () => api.get("/analysis/concept-categories"),
+
+  neuronFingerprint: (
+    conceptName: string,
+    words: string[],
+    modelName = "french",
+  ) =>
+    api.post("/analysis/neuron-fingerprint", {
+      concept_name: conceptName,
+      words,
+      model_name: modelName,
+    }),
 };
 
 // Model endpoints

@@ -18,9 +18,15 @@ import {
   BarChart3,
   GitCompare,
   Network,
+<<<<<<< Updated upstream
   Search,
   Star,
   ArrowRight,
+=======
+  Star,
+  Search,
+  Info,
+>>>>>>> Stashed changes
 } from "lucide-react";
 import * as d3 from "d3";
 import { analysis } from "../utils/api";
@@ -54,11 +60,28 @@ interface SharedNeuron {
   active_in: number;
   per_word: number[];
 }
+<<<<<<< Updated upstream
+=======
+interface MonosemanticNeuron {
+  layer: number;
+  head: number;
+  neuron: number;
+  selectivity: number;
+  mean_in: number;
+  mean_out: number;
+  in_active_count: number;
+  per_word: number[];
+}
+>>>>>>> Stashed changes
 interface FingerprintResult {
   concept: string;
   words: WordFingerprint[];
   similarity: Record<string, number[][]>;
   shared_neurons: SharedNeuron[];
+<<<<<<< Updated upstream
+=======
+  monosemantic_neurons?: MonosemanticNeuron[];
+>>>>>>> Stashed changes
   model_info: { n_layers: number; n_heads: number; n_neurons: number };
 }
 interface CrossConceptEntry {
@@ -132,6 +155,7 @@ const CONCEPT_COLORS: Record<string, string> = {
   politics: "#10b981",
 };
 
+<<<<<<< Updated upstream
 /* ================================================================== */
 /*  Color helpers                                                      */
 /* ================================================================== */
@@ -178,6 +202,62 @@ function simColor(v: number): string {
 
 /* ================================================================== */
 /*  View tabs (reordered: Similarity → Cross-Concept → Intersection → Graph) */
+=======
+const presetOf = (id: string) => PRESETS.find((p) => p.id === id);
+
+/* ================================================================== */
+/*  Color helpers                                                      */
+/* ================================================================== */
+
+/** Similarity cell color: deep navy → indigo → teal → emerald → bright lime
+ *  Takes `t` in 0..1 (pre-normalized by caller for contrast). */
+function simColor(t: number): string {
+  if (t < 0.01) return "rgba(15,20,40,0.6)";
+  if (t < 0.25) {
+    const u = t / 0.25;
+    return `rgba(${Math.round(25 + u * 25)},${Math.round(20 + u * 35)},${Math.round(70 + u * 90)},${(0.5 + u * 0.2).toFixed(2)})`;
+  }
+  if (t < 0.5) {
+    const u = (t - 0.25) / 0.25;
+    return `rgba(${Math.round(50 - u * 20)},${Math.round(55 + u * 80)},${Math.round(160 + u * 40)},${(0.7 + u * 0.1).toFixed(2)})`;
+  }
+  if (t < 0.75) {
+    const u = (t - 0.5) / 0.25;
+    return `rgba(${Math.round(30 + u * 20)},${Math.round(135 + u * 60)},${Math.round(200 - u * 70)},${(0.8 + u * 0.1).toFixed(2)})`;
+  }
+  const u = (t - 0.75) / 0.25;
+  return `rgba(${Math.round(50 + u * 120)},${Math.round(195 + u * 50)},${Math.round(130 - u * 40)},${(0.9 + u * 0.1).toFixed(2)})`;
+}
+
+function simTextColor(v: number): string {
+  return v > 0.55 ? "rgba(255,255,255,0.95)" : "rgba(180,180,200,0.5)";
+}
+
+/** Multi-stop scientific colorscale: black → purple → blue → teal → green → yellow */
+function sciColor(t: number): string {
+  if (t < 0.2) {
+    const u = t / 0.2;
+    return `rgba(${Math.round(40 + u * 50)}, ${Math.round(10 + u * 20)}, ${Math.round(80 + u * 80)}, ${(0.4 + u * 0.2).toFixed(2)})`;
+  }
+  if (t < 0.4) {
+    const u = (t - 0.2) / 0.2;
+    return `rgba(${Math.round(90 - u * 40)}, ${Math.round(30 + u * 60)}, ${Math.round(160 + u * 40)}, ${(0.6 + u * 0.1).toFixed(2)})`;
+  }
+  if (t < 0.6) {
+    const u = (t - 0.4) / 0.2;
+    return `rgba(${Math.round(50 - u * 20)}, ${Math.round(90 + u * 80)}, ${Math.round(200 - u * 50)}, ${(0.7 + u * 0.1).toFixed(2)})`;
+  }
+  if (t < 0.8) {
+    const u = (t - 0.6) / 0.2;
+    return `rgba(${Math.round(30 + u * 80)}, ${Math.round(170 + u * 50)}, ${Math.round(150 - u * 80)}, ${(0.8 + u * 0.1).toFixed(2)})`;
+  }
+  const u = (t - 0.8) / 0.2;
+  return `rgba(${Math.round(110 + u * 145)}, ${Math.round(220 + u * 35)}, ${Math.round(70 + u * 30)}, ${(0.9 + u * 0.1).toFixed(2)})`;
+}
+
+/* ================================================================== */
+/*  View tabs                                                          */
+>>>>>>> Stashed changes
 /* ================================================================== */
 type ViewTab = "similarity" | "crossConcept" | "intersection" | "neuronGraph";
 
@@ -186,30 +266,61 @@ const VIEW_TABS: {
   label: string;
   icon: React.ReactNode;
   blurb: string;
+<<<<<<< Updated upstream
 }[] = [
   {
     id: "similarity",
     label: "Similarity",
     icon: <BarChart3 size={14} />,
     blurb: "Same concept → same neurons",
+=======
+  narrative: string;
+}[] = [
+  {
+    id: "similarity",
+    label: "Similarity Matrix",
+    icon: <BarChart3 size={14} />,
+    blurb: "Same concept → same neurons",
+    narrative:
+      "Words belonging to the same concept activate overlapping neuron populations. The cosine similarity between their x_sparse vectors proves it.",
+>>>>>>> Stashed changes
   },
   {
     id: "crossConcept",
     label: "Cross-Concept",
     icon: <GitCompare size={14} />,
     blurb: "Different concepts → different neurons",
+<<<<<<< Updated upstream
   },
   {
     id: "intersection",
     label: "Intersection",
     icon: <Eye size={14} />,
     blurb: "Which neurons are shared?",
+=======
+    narrative:
+      "This is the negative control. Words from different categories activate completely different neurons — near-zero cross-concept similarity.",
+  },
+  {
+    id: "intersection",
+    label: "Shared Neurons",
+    icon: <Eye size={14} />,
+    blurb: "Which exact neurons overlap?",
+    narrative:
+      "Pick a reference word. See exactly which neurons it shares with other same-concept words (green) vs. neurons unique to each word (dim).",
+>>>>>>> Stashed changes
   },
   {
     id: "neuronGraph",
     label: "Neuron Graph",
     icon: <Network size={14} />,
+<<<<<<< Updated upstream
     blurb: "Explore the connectivity",
+=======
+    blurb: "Visualize the connectivity",
+    narrative:
+      'A force-directed graph where word nodes connect to their top-K active neurons. Shared neurons glow green — you can literally say "neuron #4521 is the currency neuron."',
+>>>>>>> Stashed changes
   },
 ];
 
@@ -261,6 +372,7 @@ function LayerSelector({
 }
 
 /* ================================================================== */
+<<<<<<< Updated upstream
 /*  HEATMAP ROW — scientific gradient strip                            */
 /* ================================================================== */
 function HeatmapRow({
@@ -308,10 +420,47 @@ function HeatmapRow({
   return (
     <motion.div
       className="flex items-center gap-2"
+=======
+/*  NEURON STRIP — renders actual neuron positions                     */
+/* ================================================================== */
+function NeuronStrip({
+  neurons,
+  label,
+  delay = 0,
+  highlightNeurons,
+  color,
+}: {
+  neurons: TopNeuron[];
+  totalNeurons?: number;
+  label: string;
+  delay?: number;
+  highlightNeurons?: Set<number>;
+  color?: string;
+}) {
+  /* Sort neurons by activation (descending) — strongest on the left */
+  const sorted = useMemo(
+    () => [...neurons].sort((a, b) => b.val - a.val),
+    [neurons],
+  );
+  const maxVal = useMemo(
+    () => Math.max(1e-6, ...sorted.map((n) => n.val)),
+    [sorted],
+  );
+  const sharedCount =
+    highlightNeurons !== undefined
+      ? neurons.filter((n) => highlightNeurons.has(n.idx)).length
+      : null;
+
+  const topN = Math.min(5, sorted.length);
+
+  return (
+    <motion.div
+>>>>>>> Stashed changes
       initial={{ opacity: 0, x: -6 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay, duration: 0.3 }}
     >
+<<<<<<< Updated upstream
       <span className="text-[10px] font-mono text-gray-500 w-7 shrink-0 text-right">
         {label}
       </span>
@@ -356,12 +505,102 @@ function HeatmapRow({
             />
           );
         })}
+=======
+      {/* Ranked bar chart row */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-mono text-gray-500 w-7 shrink-0 text-right">
+          {label}
+        </span>
+        <div
+          className="flex-1 grid items-end h-9 rounded-md overflow-hidden border border-gray-800/30 px-0.5"
+          style={{
+            gridTemplateColumns: `repeat(${sorted.length}, 1fr)`,
+            gap: "1px",
+            background:
+              "linear-gradient(to right,rgba(15,23,42,0.3),rgba(15,23,42,0.5))",
+          }}
+        >
+          {sorted.map((n, i) => {
+            const t = n.val / maxVal;
+            const isHL = highlightNeurons?.has(n.idx);
+            const hPct = Math.max(5, t * 100);
+
+            let bg: string;
+            let shadow: string | undefined;
+
+            if (highlightNeurons !== undefined) {
+              bg = isHL
+                ? `rgba(16,185,129,${(0.5 + t * 0.5).toFixed(2)})`
+                : `rgba(100,116,139,${(0.03 + t * 0.04).toFixed(2)})`;
+              shadow =
+                isHL && t > 0.25 ? "0 0 5px rgba(16,185,129,0.35)" : undefined;
+            } else {
+              bg = color ?? sciColor(t);
+              shadow =
+                t > 0.4
+                  ? `0 0 4px ${color ?? "rgba(139,92,246,0.3)"}`
+                  : undefined;
+            }
+
+            return (
+              <motion.div
+                key={n.idx}
+                className="rounded-t-[2px]"
+                initial={{ scaleY: 0, opacity: 0 }}
+                animate={{ scaleY: 1, opacity: 1 }}
+                transition={{ delay: delay + i * 0.01, duration: 0.18 }}
+                style={{
+                  height: `${hPct}%`,
+                  backgroundColor: bg,
+                  transformOrigin: "bottom",
+                  boxShadow: shadow,
+                }}
+                title={`#${n.idx} — ${n.val.toFixed(4)}`}
+              />
+            );
+          })}
+        </div>
+        {sharedCount !== null && (
+          <span className="text-[9px] font-mono text-emerald-500/70 w-10 shrink-0 text-left">
+            {sharedCount}/{neurons.length}
+          </span>
+        )}
+      </div>
+      {/* Top neuron indices — lets users spot shared neurons across words */}
+      <div className="flex items-center gap-2 mt-px">
+        <span className="w-7 shrink-0" />
+        <div className="flex gap-1.5">
+          {sorted.slice(0, topN).map((n, i) => {
+            const isHL = highlightNeurons?.has(n.idx);
+            return (
+              <span
+                key={n.idx}
+                className="text-[7px] font-mono leading-none"
+                style={{
+                  color:
+                    highlightNeurons !== undefined
+                      ? isHL
+                        ? "#6ee7b7"
+                        : "#27272a"
+                      : i === 0
+                        ? (color ?? "#a78bfa")
+                        : "#52525b",
+                  fontWeight: isHL || i < 2 ? 600 : 400,
+                }}
+              >
+                #{n.idx}
+              </span>
+            );
+          })}
+        </div>
+>>>>>>> Stashed changes
       </div>
     </motion.div>
   );
 }
 
 /* ================================================================== */
+<<<<<<< Updated upstream
 /*  1b. NEURON STRIP — renders actual neuron positions (not bins)       */
 /* ================================================================== */
 function NeuronStrip({
@@ -557,6 +796,105 @@ function SimilarityView({
         animate={{ opacity: 1, y: 0 }}
         key={activeConcept + simKey}
       >
+=======
+/*  1. SIMILARITY VIEW — hero view, all concepts at once               */
+/* ================================================================== */
+function SimilarityView({
+  concepts,
+  activeConcept,
+  setActiveConcept,
+  selectedLayer,
+}: {
+  concepts: Record<string, FingerprintResult>;
+  activeConcept: string;
+  setActiveConcept: (c: string) => void;
+  selectedLayer: number;
+}) {
+  const result = concepts[activeConcept];
+  if (!result) return null;
+
+  const simKey = String(selectedLayer);
+  const matrix = result.similarity[simKey];
+  if (!matrix) return null;
+
+  const words = result.words.map((w) => w.word);
+  const n = words.length;
+  const offDiag: number[] = [];
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++) if (i !== j) offDiag.push(matrix[i][j]);
+  const avgSim =
+    offDiag.length > 0
+      ? offDiag.reduce((a, b) => a + b, 0) / offDiag.length
+      : 0;
+
+  // Compute min/max for rescaling — spreads the color range across actual data
+  const allVals = matrix.flat();
+  const matMin = Math.min(...allVals);
+  const matMax = Math.max(...allVals);
+  const matRange = matMax - matMin || 1;
+  const rescale = (v: number) =>
+    Math.max(0, Math.min(1, (v - matMin) / matRange));
+
+  // Quick overview badges
+  const allAvgs = useMemo(() => {
+    const out: Record<string, number> = {};
+    Object.entries(concepts).forEach(([cid, cr]) => {
+      const m = cr.similarity[simKey];
+      if (!m) return;
+      const n2 = m.length;
+      let sum = 0,
+        cnt = 0;
+      for (let i = 0; i < n2; i++)
+        for (let j = 0; j < n2; j++)
+          if (i !== j) {
+            sum += m[i][j];
+            cnt++;
+          }
+      out[cid] = cnt > 0 ? sum / cnt : 0;
+    });
+    return out;
+  }, [concepts, simKey]);
+
+  return (
+    <div className="space-y-4">
+      {/* Concept selector badges */}
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(concepts).map(([cid]) => {
+          const preset = PRESETS.find((p) => p.id === cid);
+          const avg = allAvgs[cid] ?? 0;
+          const isActive = cid === activeConcept;
+          return (
+            <motion.button
+              key={cid}
+              onClick={() => setActiveConcept(cid)}
+              className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
+                isActive
+                  ? "border-bdh-accent bg-bdh-accent/15 text-bdh-accent shadow-lg shadow-bdh-accent/10"
+                  : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+              }`}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <span className="mr-1.5">{preset?.icon}</span>
+              {preset?.name ?? cid}
+              <span
+                className={`ml-2 text-xs font-mono ${avg > 0.6 ? "text-emerald-400" : avg > 0.4 ? "text-amber-400" : "text-gray-500"}`}
+              >
+                {avg.toFixed(2)}
+              </span>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      {/* Similarity matrix */}
+      <motion.div
+        className="glass-card p-5"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        key={activeConcept + simKey}
+      >
+>>>>>>> Stashed changes
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <BarChart3 size={16} className="text-bdh-accent" />
@@ -598,6 +936,7 @@ function SimilarityView({
                 >
                   {wi}
                 </div>
+<<<<<<< Updated upstream
                 {matrix[i].map((val: number, j: number) => (
                   <motion.div
                     key={`c-${i}-${j}`}
@@ -616,6 +955,27 @@ function SimilarityView({
                     {val.toFixed(2)}
                   </motion.div>
                 ))}
+=======
+                {matrix[i].map((val: number, j: number) => {
+                  const t = rescale(val);
+                  return (
+                    <motion.div
+                      key={`c-${i}-${j}`}
+                      className="rounded-md flex items-center justify-center text-[11px] font-mono font-bold h-12"
+                      style={{
+                        backgroundColor: simColor(t),
+                        color:
+                          t > 0.6 ? "rgba(0,0,0,0.8)" : "rgba(255,255,255,0.9)",
+                      }}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: (i * n + j) * 0.015 }}
+                    >
+                      {val.toFixed(2)}
+                    </motion.div>
+                  );
+                })}
+>>>>>>> Stashed changes
               </React.Fragment>
             ))}
           </div>
@@ -623,7 +983,13 @@ function SimilarityView({
 
         {/* Legend */}
         <div className="flex items-center gap-2 mt-4">
+<<<<<<< Updated upstream
           <span className="text-[10px] text-gray-500">Low</span>
+=======
+          <span className="text-[10px] text-gray-500 font-mono">
+            {matMin.toFixed(2)}
+          </span>
+>>>>>>> Stashed changes
           <div className="flex-1 h-3 rounded-full overflow-hidden flex">
             {Array.from({ length: 20 }, (_, i) => (
               <div
@@ -633,7 +999,13 @@ function SimilarityView({
               />
             ))}
           </div>
+<<<<<<< Updated upstream
           <span className="text-[10px] text-gray-500">High</span>
+=======
+          <span className="text-[10px] text-gray-500 font-mono">
+            {matMax.toFixed(2)}
+          </span>
+>>>>>>> Stashed changes
         </div>
 
         {avgSim > 0.5 && (
@@ -660,6 +1032,45 @@ function SimilarityView({
 /* ================================================================== */
 /*  2. CROSS-CONCEPT VIEW — pre-computed negative control              */
 /* ================================================================== */
+<<<<<<< Updated upstream
+=======
+
+/** Extract "signature neurons" — neurons firing in 2+ words of the same concept */
+function extractConceptSignature(
+  result: FingerprintResult,
+  layer: number,
+): { head: number; idx: number; count: number; totalVal: number }[] {
+  const agg = new Map<
+    string,
+    { head: number; idx: number; count: number; totalVal: number }
+  >();
+  result.words.forEach((w) => {
+    const l = w.layers.find((la) => la.layer === layer);
+    if (!l) return;
+    l.heads.forEach((h) => {
+      h.top_neurons.forEach((n) => {
+        const key = `${h.head}_${n.idx}`;
+        const existing = agg.get(key);
+        if (existing) {
+          existing.count++;
+          existing.totalVal += n.val;
+        } else {
+          agg.set(key, {
+            head: h.head,
+            idx: n.idx,
+            count: 1,
+            totalVal: n.val,
+          });
+        }
+      });
+    });
+  });
+  return [...agg.values()]
+    .filter((n) => n.count >= 2)
+    .sort((a, b) => b.count - a.count || b.totalVal - a.totalVal);
+}
+
+>>>>>>> Stashed changes
 function CrossConceptView({
   crossPairs,
   concepts,
@@ -684,6 +1095,23 @@ function CrossConceptView({
   const pColor = CONCEPT_COLORS[pair.primary] ?? "#8b5cf6";
   const sColor = CONCEPT_COLORS[pair.secondary] ?? "#06b6d4";
 
+<<<<<<< Updated upstream
+=======
+  /* Concept signature neurons — shared by 2+ words within each concept */
+  const pSignature = useMemo(
+    () => extractConceptSignature(primaryResult, selectedLayer),
+    [primaryResult, selectedLayer],
+  );
+  const sSignature = useMemo(
+    () => extractConceptSignature(secondaryResult, selectedLayer),
+    [secondaryResult, selectedLayer],
+  );
+  const signatureOverlapCount = useMemo(() => {
+    const pSet = new Set(pSignature.map((n) => `${n.head}_${n.idx}`));
+    return sSignature.filter((n) => pSet.has(`${n.head}_${n.idx}`)).length;
+  }, [pSignature, sSignature]);
+
+>>>>>>> Stashed changes
   return (
     <div className="space-y-4">
       {/* Pair selector */}
@@ -795,6 +1223,147 @@ function CrossConceptView({
         )}
       </motion.div>
 
+<<<<<<< Updated upstream
+=======
+      {/* ---- Concept Neuron Signatures ---- */}
+      <motion.div
+        className="glass-card p-5"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        key={`sig-${activePair}-${selectedLayer}`}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <Zap size={14} className="text-bdh-accent" />
+          <span className="text-sm font-semibold">
+            Concept Neuron Signatures — Layer {selectedLayer}
+          </span>
+        </div>
+        <p className="text-[10px] text-gray-600 mb-4">
+          Neurons firing for 2+ words <em>within</em> the same concept. If
+          monosemantic, these signature sets should be <strong>disjoint</strong>
+          .
+        </p>
+
+        <div className="grid gap-6 md:grid-cols-2 mb-4">
+          {[
+            {
+              sig: pSignature,
+              color: pColor,
+              label: pair.primary,
+            },
+            {
+              sig: sSignature,
+              color: sColor,
+              label: pair.secondary,
+            },
+          ].map(({ sig, color, label }) => {
+            const preset = presetOf(label);
+            const byHead: Record<number, typeof sig> = {};
+            sig.forEach((n) => {
+              (byHead[n.head] ??= []).push(n);
+            });
+            return (
+              <div key={label}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span
+                    className="text-xs font-bold uppercase tracking-wider"
+                    style={{ color }}
+                  >
+                    {preset?.icon} {preset?.name ?? label}
+                  </span>
+                  <span className="text-[10px] text-gray-500 ml-auto font-mono">
+                    {sig.length} signature neurons
+                  </span>
+                </div>
+                {[0, 1, 2, 3].map((head) => {
+                  const neurons = byHead[head] ?? [];
+                  return (
+                    <div key={head} className="flex items-center gap-1.5 mb-1">
+                      <span className="text-[9px] font-mono text-gray-600 w-6 shrink-0">
+                        H{head}
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {neurons.length === 0 ? (
+                          <span className="text-[8px] text-gray-700 italic">
+                            none
+                          </span>
+                        ) : (
+                          neurons.slice(0, 8).map((n) => (
+                            <span
+                              key={n.idx}
+                              className="text-[8px] font-mono px-1.5 py-0.5 rounded-md"
+                              style={{
+                                backgroundColor: color + "18",
+                                color,
+                                border: `1px solid ${color}33`,
+                              }}
+                              title={`Shared by ${n.count} words, Σ act = ${n.totalVal.toFixed(3)}`}
+                            >
+                              #{n.idx}
+                            </span>
+                          ))
+                        )}
+                        {neurons.length > 8 && (
+                          <span
+                            className="text-[8px] font-mono"
+                            style={{ color }}
+                          >
+                            +{neurons.length - 8}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Overlap verdict */}
+        <motion.div
+          className={`p-3 rounded-xl border ${
+            signatureOverlapCount === 0
+              ? "bg-emerald-950/20 border-emerald-500/20"
+              : "bg-amber-950/20 border-amber-500/20"
+          }`}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <p className="text-xs">
+            {signatureOverlapCount === 0 ? (
+              <>
+                <Sparkles size={12} className="inline mr-1 text-emerald-400" />
+                <span className="text-emerald-400 font-bold">Zero overlap</span>
+                <span className="text-gray-400">
+                  {" "}
+                  — the two concepts use <em>completely different</em> neurons.
+                  This proves monosemantic specialization.
+                </span>
+              </>
+            ) : (
+              <>
+                <Info size={12} className="inline mr-1 text-amber-400" />
+                <span className="text-amber-400 font-bold">
+                  {signatureOverlapCount} overlapping
+                </span>
+                <span className="text-gray-400">
+                  {" "}
+                  signature neurons — some neurons respond to both concepts.
+                </span>
+              </>
+            )}
+          </p>
+        </motion.div>
+      </motion.div>
+
+>>>>>>> Stashed changes
       {/* Side-by-side heatmaps */}
       <div className="grid gap-5 md:grid-cols-2">
         {[
@@ -1043,8 +1612,17 @@ function IntersectionView({
 }
 
 /* ================================================================== */
+<<<<<<< Updated upstream
 /*  4. NEURON GRAPH — SOTA redesign with radial layout & interactions  */
 /* ================================================================== */
+=======
+/*  4. NEURON GRAPH — Hub-spoke: shared neurons as hubs, words on rim  */
+/* ================================================================== */
+
+/* Head-indexed palette — 4 distinct hues so heads are visually grouped */
+const HEAD_COLORS = ["#8b5cf6", "#f59e0b", "#06b6d4", "#ef4444"];
+
+>>>>>>> Stashed changes
 interface GraphNode {
   id: string;
   label: string;
@@ -1055,6 +1633,10 @@ interface GraphNode {
   y: number;
   val?: number;
   wordCount?: number;
+<<<<<<< Updated upstream
+=======
+  head?: number;
+>>>>>>> Stashed changes
 }
 interface GraphEdge {
   source: string;
@@ -1073,27 +1655,43 @@ function NeuronGraphView({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+<<<<<<< Updated upstream
   const [dims, setDims] = useState({ w: 900, h: 600 });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+=======
+  const [dims, setDims] = useState({ w: 900, h: 620 });
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [filterHead, setFilterHead] = useState<number | null>(null);
+>>>>>>> Stashed changes
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const obs = new ResizeObserver((entries) => {
       const { width } = entries[0].contentRect;
+<<<<<<< Updated upstream
       setDims({ w: width, h: Math.max(500, Math.min(width * 0.65, 700)) });
+=======
+      setDims({ w: width, h: Math.max(520, Math.min(width * 0.68, 720)) });
+>>>>>>> Stashed changes
     });
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
 
+<<<<<<< Updated upstream
   const { nodes, edges } = useMemo(() => {
     const nodeMap = new Map<string, GraphNode>();
     const edgeList: GraphEdge[] = [];
+=======
+  /* ---- data: aggregate neurons, keep ONLY shared (wordCount >= 2) ---- */
+  const { nodes, edges, headCounts, totalShared, totalUnique } = useMemo(() => {
+>>>>>>> Stashed changes
     const words = result.words;
     const cx = dims.w / 2;
     const cy = dims.h / 2;
 
+<<<<<<< Updated upstream
     // Word nodes in an inner ring
     const innerRadius = Math.min(dims.w, dims.h) * 0.18;
     words.forEach((w, i) => {
@@ -1111,6 +1709,9 @@ function NeuronGraphView({
     });
 
     // Aggregate neurons
+=======
+    /* 1. aggregate every neuron across all words for this layer */
+>>>>>>> Stashed changes
     const neuronAgg = new Map<
       string,
       {
@@ -1118,7 +1719,11 @@ function NeuronGraphView({
         idx: number;
         totalVal: number;
         wordCount: number;
+<<<<<<< Updated upstream
         words: Set<string>;
+=======
+        words: Map<string, number>; /* word → activation */
+>>>>>>> Stashed changes
       }
     >();
     words.forEach((w) => {
@@ -1131,25 +1736,48 @@ function NeuronGraphView({
           if (existing) {
             existing.totalVal += n.val;
             existing.wordCount++;
+<<<<<<< Updated upstream
             existing.words.add(w.word);
+=======
+            existing.words.set(w.word, n.val);
+>>>>>>> Stashed changes
           } else {
             neuronAgg.set(key, {
               head: h.head,
               idx: n.idx,
               totalVal: n.val,
               wordCount: 1,
+<<<<<<< Updated upstream
               words: new Set([w.word]),
+=======
+              words: new Map([[w.word, n.val]]),
+>>>>>>> Stashed changes
             });
           }
         });
       });
     });
 
+<<<<<<< Updated upstream
     const sortedNeurons = [...neuronAgg.entries()].sort((a, b) =>
+=======
+    /* 2. partition into shared / unique */
+    let shared = [...neuronAgg.entries()].filter(([, n]) => n.wordCount >= 2);
+    const uniqueCount = neuronAgg.size - shared.length;
+
+    /* optional head filter */
+    if (filterHead !== null) {
+      shared = shared.filter(([, n]) => n.head === filterHead);
+    }
+
+    /* sort: most-shared first, then by activation */
+    shared.sort((a, b) =>
+>>>>>>> Stashed changes
       b[1].wordCount !== a[1].wordCount
         ? b[1].wordCount - a[1].wordCount
         : b[1].totalVal - a[1].totalVal,
     );
+<<<<<<< Updated upstream
     const topNeurons = sortedNeurons.slice(0, 30);
     const maxVal = Math.max(1e-6, ...topNeurons.map(([, n]) => n.totalVal));
 
@@ -1176,18 +1804,88 @@ function NeuronGraphView({
       });
 
       info.words.forEach((wName) => {
+=======
+
+    /* take top-20 shared hubs to keep the graph readable */
+    const topShared = shared.slice(0, 20);
+    const maxVal = Math.max(1e-6, ...topShared.map(([, n]) => n.totalVal));
+
+    /* head stats */
+    const headCountsMap: Record<number, number> = {};
+    shared.forEach(([, n]) => {
+      headCountsMap[n.head] = (headCountsMap[n.head] || 0) + 1;
+    });
+
+    /* 3. layout: words on outer ring, shared neurons on inner ring */
+    const outerR = Math.min(dims.w, dims.h) * 0.4;
+    const innerR = Math.min(dims.w, dims.h) * 0.18;
+
+    const nodeArr: GraphNode[] = [];
+    const edgeList: GraphEdge[] = [];
+
+    /* word nodes — outer ring */
+    words.forEach((w, i) => {
+      const angle = (2 * Math.PI * i) / words.length - Math.PI / 2;
+      const color = WORD_COLORS[i % WORD_COLORS.length];
+      nodeArr.push({
+        id: `w_${w.word}`,
+        label: w.word,
+        type: "word",
+        color,
+        radius: 28,
+        x: cx + Math.cos(angle) * outerR,
+        y: cy + Math.sin(angle) * outerR,
+      });
+    });
+
+    /* neuron hub nodes — inner ring, sorted by head for grouping */
+    const hubsSortedByHead = [...topShared].sort(
+      (a, b) => a[1].head - b[1].head,
+    );
+    hubsSortedByHead.forEach(([key, info], i) => {
+      const angle = (2 * Math.PI * i) / hubsSortedByHead.length - Math.PI / 2;
+      /* radius scales with wordCount & activation */
+      const r =
+        10 +
+        (info.wordCount / words.length) * 10 +
+        (info.totalVal / maxVal) * 8;
+      const headColor = HEAD_COLORS[info.head % HEAD_COLORS.length];
+
+      nodeArr.push({
+        id: key,
+        label: `#${info.idx}`,
+        type: "neuron",
+        color: headColor,
+        radius: Math.min(r, 26),
+        x: cx + Math.cos(angle) * innerR,
+        y: cy + Math.sin(angle) * innerR,
+        val: info.totalVal,
+        wordCount: info.wordCount,
+        head: info.head,
+      });
+
+      /* edges from this hub to every connected word */
+      info.words.forEach((act, wName) => {
+>>>>>>> Stashed changes
         const wIdx = words.findIndex((w) => w.word === wName);
         const wordColor = WORD_COLORS[wIdx % WORD_COLORS.length];
         edgeList.push({
           source: `w_${wName}`,
           target: key,
+<<<<<<< Updated upstream
           color: isShared ? "#10b981" : wordColor,
           width: isShared ? 2.5 : 1,
           shared: isShared,
+=======
+          color: wordColor,
+          width: 1.5 + (act / maxVal) * 2.5,
+          shared: true,
+>>>>>>> Stashed changes
         });
       });
     });
 
+<<<<<<< Updated upstream
     // d3-force refinement
     const nodeArr = [...nodeMap.values()];
     const sim = d3
@@ -1209,11 +1907,23 @@ function NeuronGraphView({
       .force(
         "collide",
         d3.forceCollide<any>().radius((d: any) => (d.radius || 10) + 8),
+=======
+    /* 4. d3 force — light nudge to avoid overlaps while keeping ring shape */
+    const sim = d3
+      .forceSimulation(nodeArr as any[])
+      .force(
+        "collide",
+        d3
+          .forceCollide<any>()
+          .radius((d: any) => (d.radius || 10) + 6)
+          .strength(0.8),
+>>>>>>> Stashed changes
       )
       .force(
         "radial",
         d3
           .forceRadial(
+<<<<<<< Updated upstream
             (d: any) => (d.type === "word" ? innerRadius : outerRadius),
             cx,
             cy,
@@ -1229,6 +1939,30 @@ function NeuronGraphView({
 
     return { nodes: nodeArr, edges: edgeList };
   }, [result, selectedLayer, dims]);
+=======
+            (d: any) => (d.type === "word" ? outerR : innerR),
+            cx,
+            cy,
+          )
+          .strength(0.6),
+      )
+      .force("charge", d3.forceManyBody().strength(-60))
+      .stop();
+    for (let i = 0; i < 180; i++) sim.tick();
+    nodeArr.forEach((n) => {
+      n.x = Math.max(n.radius + 12, Math.min(dims.w - n.radius - 12, n.x));
+      n.y = Math.max(n.radius + 12, Math.min(dims.h - n.radius - 12, n.y));
+    });
+
+    return {
+      nodes: nodeArr,
+      edges: edgeList,
+      headCounts: headCountsMap,
+      totalShared: shared.length,
+      totalUnique: uniqueCount,
+    };
+  }, [result, selectedLayer, dims, filterHead]);
+>>>>>>> Stashed changes
 
   const nodeById = useMemo(() => {
     const m = new Map<string, GraphNode>();
@@ -1236,11 +1970,15 @@ function NeuronGraphView({
     return m;
   }, [nodes]);
 
+<<<<<<< Updated upstream
   const sharedCount = nodes.filter(
     (n) => n.type === "neuron" && n.color === "#10b981",
   ).length;
 
   // Hover helpers
+=======
+  /* ---- hover helpers ---- */
+>>>>>>> Stashed changes
   const hoveredEdges = useMemo(() => {
     if (!hoveredNode) return new Set<number>();
     const s = new Set<number>();
@@ -1261,17 +1999,31 @@ function NeuronGraphView({
     return s;
   }, [hoveredNode, edges]);
 
+<<<<<<< Updated upstream
+=======
+  /* ---- curved edge path ---- */
+>>>>>>> Stashed changes
   const edgePath = useCallback((s: GraphNode, t: GraphNode) => {
     const dx = t.x - s.x;
     const dy = t.y - s.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 1) return `M${s.x},${s.y} L${t.x},${t.y}`;
+<<<<<<< Updated upstream
     const curvature = Math.min(dist * 0.2, 40);
+=======
+    const curvature = Math.min(dist * 0.15, 35);
+>>>>>>> Stashed changes
     const mx = (s.x + t.x) / 2 - (dy / dist) * curvature;
     const my = (s.y + t.y) / 2 + (dx / dist) * curvature;
     return `M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}`;
   }, []);
 
+<<<<<<< Updated upstream
+=======
+  /* ---- tooltip for hovered neuron ---- */
+  const tooltipNode = hoveredNode ? nodeById.get(hoveredNode) : null;
+
+>>>>>>> Stashed changes
   return (
     <motion.div
       ref={containerRef}
@@ -1279,6 +2031,7 @@ function NeuronGraphView({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
     >
+<<<<<<< Updated upstream
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Network size={16} className="text-bdh-accent" />
@@ -1392,6 +2145,158 @@ function NeuronGraphView({
           const nodeOpacity = isHoverActive ? (isRelevant ? 1 : 0.15) : 1;
           const isWord = n.type === "word";
           const isShared = !isWord && n.color === "#10b981";
+=======
+      {/* ---- header row ---- */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <Network size={16} className="text-bdh-accent" />
+          <span className="text-sm font-semibold">
+            Shared-Neuron Hub Graph — Layer {selectedLayer}
+          </span>
+        </div>
+
+        {/* head filter pills */}
+        <div className="flex items-center gap-1.5 text-[10px]">
+          <button
+            onClick={() => setFilterHead(null)}
+            className={`px-2 py-0.5 rounded-full border transition ${
+              filterHead === null
+                ? "border-bdh-accent text-bdh-accent bg-bdh-accent/10"
+                : "border-gray-700 text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            All Heads
+          </button>
+          {HEAD_COLORS.map((c, i) => (
+            <button
+              key={i}
+              onClick={() => setFilterHead(filterHead === i ? null : i)}
+              className={`px-2 py-0.5 rounded-full border transition ${
+                filterHead === i
+                  ? "bg-opacity-20 text-white"
+                  : "border-gray-700 text-gray-500 hover:text-gray-300"
+              }`}
+              style={
+                filterHead === i
+                  ? { borderColor: c, backgroundColor: c + "22", color: c }
+                  : {}
+              }
+            >
+              H{i}
+              {headCounts[i] ? ` (${headCounts[i]})` : ""}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ---- legend strip ---- */}
+      <div className="flex items-center gap-5 mb-3 text-[10px] text-gray-400">
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block w-4 h-4 rounded-md border"
+            style={{
+              background: "rgba(139,92,246,0.25)",
+              borderColor: "rgba(139,92,246,0.5)",
+            }}
+          />
+          Word (outer ring)
+        </span>
+        {HEAD_COLORS.map((c, i) => (
+          <span key={i} className="flex items-center gap-1">
+            <span
+              className="inline-block w-3 h-3 rounded-full"
+              style={{ background: c, boxShadow: `0 0 6px ${c}55` }}
+            />
+            Head {i}
+          </span>
+        ))}
+        <span className="ml-auto text-gray-600 font-mono">
+          {totalShared} shared · {totalUnique} unique (hidden)
+        </span>
+      </div>
+
+      {/* ---- SVG graph ---- */}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${dims.w} ${dims.h}`}
+        className="w-full"
+        style={{ height: dims.h }}
+      >
+        <defs>
+          <filter id="hub-glow">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          </filter>
+          <filter id="word-glow">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          </filter>
+          {WORD_COLORS.map((c, i) => (
+            <radialGradient key={i} id={`wg-${i}`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={c} stopOpacity="0.9" />
+              <stop offset="100%" stopColor={c} stopOpacity="0.45" />
+            </radialGradient>
+          ))}
+          {HEAD_COLORS.map((c, i) => (
+            <radialGradient key={i} id={`hg-${i}`} cx="40%" cy="35%" r="60%">
+              <stop offset="0%" stopColor={c} stopOpacity="1" />
+              <stop offset="100%" stopColor={c} stopOpacity="0.35" />
+            </radialGradient>
+          ))}
+        </defs>
+
+        {/* Subtle guide rings */}
+        <circle
+          cx={dims.w / 2}
+          cy={dims.h / 2}
+          r={Math.min(dims.w, dims.h) * 0.18}
+          fill="none"
+          stroke="rgba(139,92,246,0.05)"
+          strokeWidth="1"
+          strokeDasharray="3 7"
+        />
+        <circle
+          cx={dims.w / 2}
+          cy={dims.h / 2}
+          r={Math.min(dims.w, dims.h) * 0.4}
+          fill="none"
+          stroke="rgba(100,100,120,0.04)"
+          strokeWidth="1"
+          strokeDasharray="3 7"
+        />
+
+        {/* ---- Edges ---- */}
+        {edges.map((e, i) => {
+          const s = nodeById.get(e.source);
+          const t = nodeById.get(e.target);
+          if (!s || !t) return null;
+          const isHoverActive = hoveredNode !== null;
+          const isConnected = hoveredEdges.has(i);
+          const opacity = isHoverActive ? (isConnected ? 0.85 : 0.04) : 0.35;
+
+          return (
+            <motion.path
+              key={`e-${i}`}
+              d={edgePath(s, t)}
+              fill="none"
+              stroke={e.color}
+              strokeWidth={isConnected ? e.width + 1.5 : e.width}
+              strokeOpacity={opacity}
+              strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ delay: i * 0.008, duration: 0.5 }}
+            />
+          );
+        })}
+
+        {/* ---- Nodes ---- */}
+        {nodes.map((n, i) => {
+          const isHoverActive = hoveredNode !== null;
+          const isRelevant = hoveredNeighbors.has(n.id);
+          const nodeOpacity = isHoverActive ? (isRelevant ? 1 : 0.12) : 1;
+          const isWord = n.type === "word";
+>>>>>>> Stashed changes
           const wordIdx = isWord
             ? result.words.findIndex((w) => `w_${w.word}` === n.id)
             : -1;
@@ -1401,11 +2306,16 @@ function NeuronGraphView({
               key={n.id}
               initial={{ opacity: 0, scale: 0 }}
               animate={{ opacity: nodeOpacity, scale: 1 }}
+<<<<<<< Updated upstream
               transition={{ delay: i * 0.015, duration: 0.3 }}
+=======
+              transition={{ delay: i * 0.018, duration: 0.35 }}
+>>>>>>> Stashed changes
               onMouseEnter={() => setHoveredNode(n.id)}
               onMouseLeave={() => setHoveredNode(null)}
               style={{ cursor: "pointer" }}
             >
+<<<<<<< Updated upstream
               {/* Glow ring for shared neurons */}
               {isShared && (
                 <circle
@@ -1446,27 +2356,84 @@ function NeuronGraphView({
                     stroke={n.color}
                     strokeWidth="1.5"
                     strokeOpacity="0.6"
+=======
+              {isWord ? (
+                /* ---- Word node: rounded pill ---- */
+                <>
+                  <rect
+                    x={n.x - n.radius}
+                    y={n.y - 14}
+                    width={n.radius * 2}
+                    height={28}
+                    rx={8}
+                    fill={`url(#wg-${wordIdx % WORD_COLORS.length})`}
+                    stroke={n.color}
+                    strokeWidth="1.5"
+                    strokeOpacity="0.55"
+>>>>>>> Stashed changes
                     filter="url(#word-glow)"
                   />
                   <text
                     x={n.x}
+<<<<<<< Updated upstream
                     y={n.y + 4}
                     textAnchor="middle"
                     fill="white"
                     fontSize="11"
                     fontFamily="monospace"
                     fontWeight="700"
+=======
+                    y={n.y + 4.5}
+                    textAnchor="middle"
+                    fill="white"
+                    fontSize="12"
+                    fontFamily="monospace"
+                    fontWeight="700"
+                    style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
+>>>>>>> Stashed changes
                   >
                     {n.label}
                   </text>
                 </>
               ) : (
+<<<<<<< Updated upstream
                 <>
                   {/* Neuron node = circle */}
+=======
+                /* ---- Neuron hub node: bold circle with index label ---- */
+                <>
+                  {/* pulsing glow ring */}
+                  <circle
+                    cx={n.x}
+                    cy={n.y}
+                    r={n.radius + 5}
+                    fill="none"
+                    stroke={n.color}
+                    strokeWidth="1.2"
+                    strokeOpacity="0.25"
+                    filter="url(#hub-glow)"
+                  >
+                    <animate
+                      attributeName="r"
+                      values={`${n.radius + 3};${n.radius + 7};${n.radius + 3}`}
+                      dur="3.5s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="stroke-opacity"
+                      values="0.25;0.1;0.25"
+                      dur="3.5s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+
+                  {/* main circle */}
+>>>>>>> Stashed changes
                   <circle
                     cx={n.x}
                     cy={n.y}
                     r={n.radius}
+<<<<<<< Updated upstream
                     fill={isShared ? "url(#shared-grad)" : n.color}
                     fillOpacity={isShared ? 1 : 0.5}
                     stroke={n.color}
@@ -1503,6 +2470,59 @@ function NeuronGraphView({
                         textAnchor="middle"
                         fill="#6ee7b7"
                         fontSize="7"
+=======
+                    fill={`url(#hg-${(n.head ?? 0) % HEAD_COLORS.length})`}
+                    stroke={n.color}
+                    strokeWidth="2"
+                    strokeOpacity="0.7"
+                  />
+
+                  {/* neuron index inside circle */}
+                  <text
+                    x={n.x}
+                    y={n.y + 3.5}
+                    textAnchor="middle"
+                    fill="white"
+                    fontSize={n.radius > 16 ? "9" : "7"}
+                    fontFamily="monospace"
+                    fontWeight="700"
+                    style={{ textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}
+                  >
+                    {n.label}
+                  </text>
+
+                  {/* head label above */}
+                  <text
+                    x={n.x}
+                    y={n.y - n.radius - 5}
+                    textAnchor="middle"
+                    fill={n.color}
+                    fontSize="8"
+                    fontFamily="monospace"
+                    fontWeight="600"
+                    opacity="0.75"
+                  >
+                    H{n.head}
+                  </text>
+
+                  {/* word-count badge */}
+                  {n.wordCount && n.wordCount >= 2 && (
+                    <>
+                      <circle
+                        cx={n.x + n.radius * 0.72}
+                        cy={n.y - n.radius * 0.72}
+                        r={7}
+                        fill="#18181b"
+                        stroke={n.color}
+                        strokeWidth="1.2"
+                      />
+                      <text
+                        x={n.x + n.radius * 0.72}
+                        y={n.y - n.radius * 0.72 + 3.5}
+                        textAnchor="middle"
+                        fill="white"
+                        fontSize="8"
+>>>>>>> Stashed changes
                         fontWeight="700"
                       >
                         {n.wordCount}
@@ -1516,6 +2536,7 @@ function NeuronGraphView({
         })}
       </svg>
 
+<<<<<<< Updated upstream
       <div className="flex items-center justify-between mt-3">
         <p className="text-xs text-gray-500">
           <span className="text-emerald-400 font-semibold">Green neurons</span>{" "}
@@ -1525,6 +2546,47 @@ function NeuronGraphView({
         <span className="text-[10px] text-gray-600 font-mono">
           {nodes.filter((n) => n.type === "neuron").length} neurons ·{" "}
           {edges.length} connections
+=======
+      {/* ---- tooltip card ---- */}
+      {tooltipNode && tooltipNode.type === "neuron" && (
+        <motion.div
+          className="mt-2 p-2.5 rounded-lg bg-gray-900/90 border border-gray-700 text-xs flex items-center gap-4"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <span
+            className="font-mono font-bold"
+            style={{ color: tooltipNode.color }}
+          >
+            Head {tooltipNode.head} · Neuron {tooltipNode.label}
+          </span>
+          <span className="text-gray-400">
+            Shared by{" "}
+            <span className="text-white font-semibold">
+              {tooltipNode.wordCount}
+            </span>{" "}
+            words
+          </span>
+          <span className="text-gray-500">
+            Σ activation:{" "}
+            <span className="text-gray-300 font-mono">
+              {tooltipNode.val?.toFixed(4)}
+            </span>
+          </span>
+        </motion.div>
+      )}
+
+      {/* ---- footer summary ---- */}
+      <div className="flex items-center justify-between mt-3">
+        <p className="text-xs text-gray-500">
+          <span className="text-bdh-accent font-semibold">Hub neurons</span>{" "}
+          fire for 2+ words — evidence of shared concept encoding. Hover any
+          node to trace connections.
+        </p>
+        <span className="text-[10px] text-gray-600 font-mono">
+          {nodes.filter((n) => n.type === "neuron").length} hubs ·{" "}
+          {edges.length} links
+>>>>>>> Stashed changes
         </span>
       </div>
     </motion.div>
@@ -1532,6 +2594,7 @@ function NeuronGraphView({
 }
 
 /* ================================================================== */
+<<<<<<< Updated upstream
 /*  SHARED NEURON TABLE                                                */
 /* ================================================================== */
 function SharedNeuronPanel({
@@ -1542,6 +2605,40 @@ function SharedNeuronPanel({
   words: string[];
 }) {
   if (neurons.length === 0) return null;
+=======
+/*  MONOSEMANTIC NEURON TABLE (statistical selectivity)                */
+/* ================================================================== */
+function MonosemanticNeuronPanel({
+  neurons,
+  words,
+  conceptName,
+}: {
+  neurons: MonosemanticNeuron[];
+  words: string[];
+  conceptName: string;
+}) {
+  if (!neurons || neurons.length === 0) {
+    return (
+      <motion.div
+        className="glass-card p-4"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-gray-600" />
+          <span className="text-sm text-gray-500">
+            No monosemantic neurons found for this concept (selectivity &gt;
+            0.5)
+          </span>
+        </div>
+      </motion.div>
+    );
+  }
+
+  const HEAD_COLORS = ["#8b5cf6", "#f59e0b", "#06b6d4", "#ef4444"];
+
+>>>>>>> Stashed changes
   return (
     <motion.div
       className="glass-card p-4"
@@ -1549,6 +2646,7 @@ function SharedNeuronPanel({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2 }}
     >
+<<<<<<< Updated upstream
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={16} className="text-bdh-accent" />
         <span className="text-sm font-semibold">Top Shared Neurons</span>
@@ -1556,12 +2654,33 @@ function SharedNeuronPanel({
           Neurons active across all {words.length} input words
         </span>
       </div>
+=======
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles size={16} className="text-bdh-accent" />
+        <span className="text-sm font-semibold">Monosemantic Neurons</span>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-bdh-accent/20 text-bdh-accent font-mono">
+          {neurons.length} found
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Neurons that fire selectively for{" "}
+        <span className="text-white font-semibold">{conceptName}</span> but not
+        other concepts. Selectivity = mean_in / (mean_in + mean_out) — 1.0 =
+        perfectly exclusive.
+      </p>
+>>>>>>> Stashed changes
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-gray-500 border-b border-gray-800">
               <th className="text-left py-2 px-2">Location</th>
+<<<<<<< Updated upstream
               <th className="text-right py-2 px-2">Mean Act.</th>
+=======
+              <th className="text-right py-2 px-2">Selectivity</th>
+              <th className="text-right py-2 px-2">In</th>
+              <th className="text-right py-2 px-2">Out</th>
+>>>>>>> Stashed changes
               {words.map((w, i) => (
                 <th
                   key={w}
@@ -1571,11 +2690,19 @@ function SharedNeuronPanel({
                   {w}
                 </th>
               ))}
+<<<<<<< Updated upstream
               <th className="py-2 px-2">Strength</th>
             </tr>
           </thead>
           <tbody>
             {neurons.slice(0, 15).map((n, i) => (
+=======
+              <th className="py-2 px-2">Selectivity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {neurons.slice(0, 20).map((n, i) => (
+>>>>>>> Stashed changes
               <motion.tr
                 key={`${n.layer}-${n.head}-${n.neuron}`}
                 className="border-b border-gray-800/50 hover:bg-gray-800/30"
@@ -1583,11 +2710,41 @@ function SharedNeuronPanel({
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.03 }}
               >
+<<<<<<< Updated upstream
                 <td className="py-2 px-2 font-mono text-bdh-accent">
                   L{n.layer}_H{n.head}_N{n.neuron}
                 </td>
                 <td className="py-2 px-2 text-right font-mono text-gray-400">
                   {n.mean_activation.toFixed(4)}
+=======
+                <td className="py-2 px-2 font-mono">
+                  <span className="text-gray-500">L{n.layer}_</span>
+                  <span
+                    style={{ color: HEAD_COLORS[n.head % HEAD_COLORS.length] }}
+                  >
+                    H{n.head}
+                  </span>
+                  <span className="text-gray-500">_N{n.neuron}</span>
+                </td>
+                <td className="py-2 px-2 text-right font-mono font-bold">
+                  <span
+                    className={
+                      n.selectivity >= 0.9
+                        ? "text-emerald-400"
+                        : n.selectivity >= 0.75
+                          ? "text-amber-400"
+                          : "text-gray-300"
+                    }
+                  >
+                    {n.selectivity.toFixed(3)}
+                  </span>
+                </td>
+                <td className="py-2 px-2 text-right font-mono text-emerald-400/70">
+                  {n.mean_in.toFixed(3)}
+                </td>
+                <td className="py-2 px-2 text-right font-mono text-red-400/70">
+                  {n.mean_out.toFixed(3)}
+>>>>>>> Stashed changes
                 </td>
                 {n.per_word.map((pw, wi) => (
                   <td
@@ -1602,6 +2759,7 @@ function SharedNeuronPanel({
                   </td>
                 ))}
                 <td className="py-2 px-2">
+<<<<<<< Updated upstream
                   <div className="w-20 h-2 bg-gray-800 rounded-full overflow-hidden">
                     <motion.div
                       className="h-full rounded-full bg-gradient-to-r from-bdh-accent to-emerald-400"
@@ -1610,6 +2768,26 @@ function SharedNeuronPanel({
                         width: `${Math.min((n.mean_activation / (neurons[0]?.mean_activation || 1)) * 100, 100)}%`,
                       }}
                       transition={{ delay: i * 0.05, duration: 0.5 }}
+=======
+                  <div className="w-24 h-3 bg-gray-800 rounded-full overflow-hidden relative">
+                    <motion.div
+                      className={`h-full rounded-full ${
+                        n.selectivity >= 0.9
+                          ? "bg-gradient-to-r from-emerald-500 to-emerald-300"
+                          : n.selectivity >= 0.75
+                            ? "bg-gradient-to-r from-amber-500 to-amber-300"
+                            : "bg-gradient-to-r from-bdh-accent to-violet-300"
+                      }`}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${n.selectivity * 100}%` }}
+                      transition={{ delay: i * 0.04, duration: 0.5 }}
+                    />
+                    {/* 0.25 chance line */}
+                    <div
+                      className="absolute top-0 bottom-0 w-px bg-gray-600"
+                      style={{ left: "25%" }}
+                      title="Chance level (0.25)"
+>>>>>>> Stashed changes
                     />
                   </div>
                 </td>
@@ -1618,6 +2796,23 @@ function SharedNeuronPanel({
           </tbody>
         </table>
       </div>
+<<<<<<< Updated upstream
+=======
+      <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-emerald-400" /> ≥ 0.9
+          (exclusive)
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-amber-400" /> ≥ 0.75 (strong)
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-bdh-accent" /> ≥ 0.5
+          (selective)
+        </span>
+        <span className="ml-auto">Vertical line = chance (0.25)</span>
+      </div>
+>>>>>>> Stashed changes
     </motion.div>
   );
 }
@@ -1717,6 +2912,40 @@ function TryItYourself({
     return overlaps;
   }, [liveResult, precomputed, selectedLayer]);
 
+<<<<<<< Updated upstream
+=======
+  /* Shared neurons across probed words — for overlap highlighting */
+  const liveSharedNeurons = useMemo(() => {
+    if (!liveResult || liveResult.words.length < 2) return null;
+    const neuronWordCount = new Map<string, number>();
+    liveResult.words.forEach((w) => {
+      const layer = w.layers.find((l) => l.layer === selectedLayer);
+      if (!layer) return;
+      layer.heads.forEach((h) => {
+        h.top_neurons.forEach((n) => {
+          const key = `${h.head}_${n.idx}`;
+          neuronWordCount.set(key, (neuronWordCount.get(key) || 0) + 1);
+        });
+      });
+    });
+    const perHead = new Map<number, Set<number>>();
+    neuronWordCount.forEach((count, key) => {
+      if (count >= 2) {
+        const parts = key.split("_");
+        const head = parseInt(parts[0]);
+        const idx = parseInt(parts[1]);
+        if (!perHead.has(head)) perHead.set(head, new Set());
+        perHead.get(head)!.add(idx);
+      }
+    });
+    return perHead.size > 0 ? perHead : null;
+  }, [liveResult, selectedLayer]);
+
+  const totalSharedCount = liveSharedNeurons
+    ? [...liveSharedNeurons.values()].reduce((s, set) => s + set.size, 0)
+    : 0;
+
+>>>>>>> Stashed changes
   return (
     <motion.div
       className="rounded-2xl p-6 bg-gradient-to-br from-gray-900/80 to-gray-950/80 border border-cyan-500/15 backdrop-blur-md"
@@ -1809,6 +3038,32 @@ function TryItYourself({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
+<<<<<<< Updated upstream
+=======
+          {/* Shared neuron banner */}
+          {liveSharedNeurons && (
+            <motion.div
+              className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/15"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <p className="text-xs">
+                <Sparkles size={12} className="inline mr-1 text-emerald-400" />
+                <span className="text-emerald-400 font-semibold">
+                  {totalSharedCount} shared neuron
+                  {totalSharedCount !== 1 ? "s" : ""}
+                </span>
+                <span className="text-gray-500">
+                  {" "}
+                  found across {liveResult.words.length} words —{" "}
+                  <span className="text-emerald-500/70">green bars</span> =
+                  neurons that fire for multiple words
+                </span>
+              </p>
+            </motion.div>
+          )}
+
+>>>>>>> Stashed changes
           {liveResult.words.map((fp) => {
             const layer = fp.layers.find((l) => l.layer === selectedLayer);
             if (!layer) return null;
@@ -1839,6 +3094,10 @@ function TryItYourself({
                       label={`H${h.head}`}
                       delay={hi * 0.03}
                       color="rgba(34,211,238,0.7)"
+<<<<<<< Updated upstream
+=======
+                      highlightNeurons={liveSharedNeurons?.get(h.head)}
+>>>>>>> Stashed changes
                     />
                   ))}
                 </div>
@@ -1971,6 +3230,10 @@ export function MonosemanticityPage() {
   const nLayers = precomputed?.model_info.n_layers ?? 8;
   const bestLayer = precomputed?.best_layer ?? 5;
 
+<<<<<<< Updated upstream
+=======
+  // --- Loading state ---
+>>>>>>> Stashed changes
   if (loadingData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1986,6 +3249,10 @@ export function MonosemanticityPage() {
     );
   }
 
+<<<<<<< Updated upstream
+=======
+  // --- Error state ---
+>>>>>>> Stashed changes
   if (loadError || !precomputed) {
     return (
       <div className="min-h-screen p-6 md:p-8 max-w-[1600px] mx-auto">
@@ -1998,9 +3265,15 @@ export function MonosemanticityPage() {
           <p className="text-lg font-medium mb-2">
             Pre-computed data not found
           </p>
+<<<<<<< Updated upstream
           <p className="text-sm text-gray-700 max-w-md text-center">
             Run{" "}
             <code className="text-bdh-accent">
+=======
+          <p className="text-sm text-gray-500 text-center max-w-md">
+            Run{" "}
+            <code className="px-2 py-1 bg-gray-800 rounded text-xs font-mono text-bdh-accent">
+>>>>>>> Stashed changes
               python scripts/precompute_monosemanticity.py
             </code>{" "}
             to generate the visualization data, then refresh this page.
@@ -2015,6 +3288,11 @@ export function MonosemanticityPage() {
     );
   }
 
+<<<<<<< Updated upstream
+=======
+  const currentTab = VIEW_TABS.find((t) => t.id === viewTab)!;
+
+>>>>>>> Stashed changes
   return (
     <div className="min-h-screen p-6 md:p-8 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -2029,6 +3307,7 @@ export function MonosemanticityPage() {
         <p className="text-gray-400 text-sm max-w-2xl">
           BDH produces{" "}
           <span className="text-white font-medium">interpretable neurons</span>{" "}
+<<<<<<< Updated upstream
           where same-concept words activate the same sparse subset. Four views
           reveal this from similarity to neuron-level connectivity.
         </p>
@@ -2036,6 +3315,16 @@ export function MonosemanticityPage() {
 
       {/* Toolbar: Layer selector + View tabs */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+=======
+          by design. Same-concept words activate the same sparse x_sparse
+          subset. Four views reveal this — from similarity proof to neuron-level
+          graphs.
+        </p>
+      </motion.div>
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+>>>>>>> Stashed changes
         <LayerSelector
           nLayers={nLayers}
           selected={selectedLayer}
@@ -2050,8 +3339,13 @@ export function MonosemanticityPage() {
               onClick={() => setViewTab(tab.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                 viewTab === tab.id
+<<<<<<< Updated upstream
                   ? "bg-bdh-accent text-white"
                   : "text-gray-400 hover:text-gray-200"
+=======
+                  ? "bg-bdh-accent text-white shadow-lg shadow-bdh-accent/20"
+                  : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/40"
+>>>>>>> Stashed changes
               }`}
             >
               {tab.icon}
@@ -2061,13 +3355,20 @@ export function MonosemanticityPage() {
         </div>
       </div>
 
+<<<<<<< Updated upstream
       {/* Narrative step indicator */}
       <motion.div
         className="mb-4 flex items-center gap-2"
+=======
+      {/* Narrative step */}
+      <motion.div
+        className="mb-5 flex items-start gap-3 p-3 rounded-xl bg-gray-900/30 border border-gray-800/30"
+>>>>>>> Stashed changes
         key={viewTab}
         initial={{ opacity: 0, y: -5 }}
         animate={{ opacity: 1, y: 0 }}
       >
+<<<<<<< Updated upstream
         <span className="text-xs text-bdh-accent font-bold uppercase tracking-wider">
           Step {VIEW_TABS.findIndex((t) => t.id === viewTab) + 1}/
           {VIEW_TABS.length}
@@ -2076,6 +3377,17 @@ export function MonosemanticityPage() {
         <span className="text-xs text-gray-400">
           {VIEW_TABS.find((t) => t.id === viewTab)?.blurb}
         </span>
+=======
+        <Info size={14} className="text-bdh-accent mt-0.5 shrink-0" />
+        <div>
+          <span className="text-[10px] text-bdh-accent font-bold uppercase tracking-wider">
+            Step {VIEW_TABS.findIndex((t) => t.id === viewTab) + 1} of{" "}
+            {VIEW_TABS.length}
+          </span>
+          <span className="text-gray-600 mx-2">·</span>
+          <span className="text-xs text-gray-400">{currentTab.narrative}</span>
+        </div>
+>>>>>>> Stashed changes
       </motion.div>
 
       {/* Active view */}
@@ -2084,9 +3396,15 @@ export function MonosemanticityPage() {
           {viewTab === "similarity" && (
             <motion.div
               key="sim"
+<<<<<<< Updated upstream
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
+=======
+              initial={{ opacity: 0, x: -15 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 15 }}
+>>>>>>> Stashed changes
               transition={{ duration: 0.2 }}
             >
               <SimilarityView
@@ -2100,9 +3418,15 @@ export function MonosemanticityPage() {
           {viewTab === "crossConcept" && (
             <motion.div
               key="cross"
+<<<<<<< Updated upstream
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
+=======
+              initial={{ opacity: 0, x: -15 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 15 }}
+>>>>>>> Stashed changes
               transition={{ duration: 0.2 }}
             >
               <CrossConceptView
@@ -2115,6 +3439,7 @@ export function MonosemanticityPage() {
           {viewTab === "intersection" && (
             <motion.div
               key="inter"
+<<<<<<< Updated upstream
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
@@ -2123,17 +3448,46 @@ export function MonosemanticityPage() {
               <div className="flex flex-wrap gap-2 mb-4">
                 {Object.entries(precomputed.concepts).map(([cid]) => {
                   const preset = PRESETS.find((p) => p.id === cid);
+=======
+              initial={{ opacity: 0, x: -15 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 15 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Concept selector for intersection */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {Object.entries(precomputed.concepts).map(([cid]) => {
+                  const p = presetOf(cid);
+                  const c = CONCEPT_COLORS[cid] ?? "#8b5cf6";
+>>>>>>> Stashed changes
                   return (
                     <button
                       key={cid}
                       onClick={() => setIntersectionConcept(cid)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                         intersectionConcept === cid
+<<<<<<< Updated upstream
                           ? "border-emerald-500 bg-emerald-500/15 text-emerald-400"
                           : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
                       }`}
                     >
                       {preset?.icon} {preset?.name ?? cid}
+=======
+                          ? "shadow-lg"
+                          : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                      }`}
+                      style={
+                        intersectionConcept === cid
+                          ? {
+                              borderColor: `${c}50`,
+                              backgroundColor: `${c}15`,
+                              color: c,
+                            }
+                          : undefined
+                      }
+                    >
+                      {p?.icon} {p?.name ?? cid}
+>>>>>>> Stashed changes
                     </button>
                   );
                 })}
@@ -2147,6 +3501,7 @@ export function MonosemanticityPage() {
           {viewTab === "neuronGraph" && (
             <motion.div
               key="graph"
+<<<<<<< Updated upstream
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
@@ -2155,17 +3510,46 @@ export function MonosemanticityPage() {
               <div className="flex flex-wrap gap-2 mb-4">
                 {Object.entries(precomputed.concepts).map(([cid]) => {
                   const preset = PRESETS.find((p) => p.id === cid);
+=======
+              initial={{ opacity: 0, x: -15 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 15 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Concept selector for graph */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {Object.entries(precomputed.concepts).map(([cid]) => {
+                  const p = presetOf(cid);
+                  const c = CONCEPT_COLORS[cid] ?? "#8b5cf6";
+>>>>>>> Stashed changes
                   return (
                     <button
                       key={cid}
                       onClick={() => setActiveConcept(cid)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                         activeConcept === cid
+<<<<<<< Updated upstream
                           ? "border-bdh-accent bg-bdh-accent/15 text-bdh-accent"
                           : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
                       }`}
                     >
                       {preset?.icon} {preset?.name ?? cid}
+=======
+                          ? "shadow-lg"
+                          : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                      }`}
+                      style={
+                        activeConcept === cid
+                          ? {
+                              borderColor: `${c}50`,
+                              backgroundColor: `${c}15`,
+                              color: c,
+                            }
+                          : undefined
+                      }
+                    >
+                      {p?.icon} {p?.name ?? cid}
+>>>>>>> Stashed changes
                     </button>
                   );
                 })}
@@ -2179,6 +3563,7 @@ export function MonosemanticityPage() {
         </AnimatePresence>
       </div>
 
+<<<<<<< Updated upstream
       {/* Shared neurons table */}
       {(viewTab === "intersection" || viewTab === "neuronGraph") && (
         <SharedNeuronPanel
@@ -2194,6 +3579,23 @@ export function MonosemanticityPage() {
           }
         />
       )}
+=======
+      {/* Monosemantic neurons table (for intersection & graph views) */}
+      {(viewTab === "intersection" || viewTab === "neuronGraph") &&
+        (() => {
+          const cid =
+            viewTab === "intersection" ? intersectionConcept : activeConcept;
+          const concept = precomputed.concepts[cid];
+          const presetInfo = PRESETS.find((p) => p.id === cid);
+          return (
+            <MonosemanticNeuronPanel
+              neurons={concept?.monosemantic_neurons ?? []}
+              words={concept?.words.map((w) => w.word) ?? []}
+              conceptName={presetInfo?.name ?? cid}
+            />
+          );
+        })()}
+>>>>>>> Stashed changes
 
       {/* Insight banner */}
       <motion.div
@@ -2202,6 +3604,7 @@ export function MonosemanticityPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
       >
+<<<<<<< Updated upstream
         <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
           <Sparkles size={16} className="text-bdh-accent" />
           What You're Seeing
@@ -2230,12 +3633,40 @@ export function MonosemanticityPage() {
       </motion.div>
 
       {/* Section divider */}
+=======
+        <h3 className="text-sm font-bold mb-2 flex items-center gap-2">
+          <Sparkles size={14} className="text-bdh-accent" />
+          What You're Seeing — x_sparse only
+        </h3>
+        <p className="text-gray-400 text-xs leading-relaxed">
+          Every visualization shows{" "}
+          <span className="text-amber-400 font-semibold">
+            x_sparse = ReLU(input × Encoder)
+          </span>{" "}
+          — the clean "concept fingerprint" before attention and Hebbian
+          updates. This is the pure encoding path. The y_sparse path adds
+          context-dependent noise and is intentionally excluded. Across{" "}
+          <span className="text-white font-medium">
+            {precomputed.model_info.n_neurons.toLocaleString()} neurons per head
+          </span>
+          , same-concept words activate the same sparse ~5% subset. That's
+          monosemanticity — you can point at a neuron and know what concept it
+          encodes. Transformers can't do this.
+        </p>
+      </motion.div>
+
+      {/* Divider */}
+>>>>>>> Stashed changes
       <div className="relative my-10">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-800/50" />
         </div>
         <div className="relative flex justify-center">
+<<<<<<< Updated upstream
           <span className="px-4 py-1 bg-gray-950 text-xs text-gray-500 uppercase tracking-wider rounded-full border border-gray-800/50">
+=======
+          <span className="px-4 py-1 bg-gray-950 text-[10px] text-gray-500 uppercase tracking-wider rounded-full border border-gray-800/50">
+>>>>>>> Stashed changes
             Live Exploration
           </span>
         </div>
