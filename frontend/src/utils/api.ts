@@ -95,12 +95,12 @@ export const analysis = {
 
   neuronFingerprint: (
     conceptName: string,
-    examples: string[],
+    words: string[],
     modelName = "french",
   ) =>
     api.post("/analysis/neuron-fingerprint", {
       concept_name: conceptName,
-      examples,
+      words,
       model_name: modelName,
     }),
 
@@ -109,14 +109,18 @@ export const analysis = {
 
   getConceptCategories: () => api.get("/analysis/concept-categories"),
 
-  neuronFingerprint: (
-    conceptName: string,
-    words: string[],
+  /**
+   * Live synapse tracking: send a sentence through the model and get
+   * token-by-token x_sparse activations for specified neurons.
+   */
+  synapseTrack: (
+    sentence: string,
+    synapses: { layer: number; head: number; neuron: number }[],
     modelName = "french",
   ) =>
-    api.post("/analysis/neuron-fingerprint", {
-      concept_name: conceptName,
-      words,
+    api.post("/analysis/synapse-track", {
+      sentence,
+      synapses,
       model_name: modelName,
     }),
 };
