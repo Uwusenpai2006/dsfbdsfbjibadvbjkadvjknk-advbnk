@@ -2,17 +2,14 @@
 """
 Pre-compute monosemanticity data for static frontend visualization.
 
-Generates a single JSON file containing:
-- Per-word x_sparse fingerprints for every curated category
-- Cosine similarity matrices (per layer)
-- Top-K neuron indices per word
-- Shared neuron intersection data
-- Cross-concept distinctness (Jaccard) for negative-control pairs
-- "best_layer" — layer with peak avg within-concept similarity
-- **NEW** Selectivity scores per neuron (mean_in / (mean_in + mean_out))
-- **NEW** Mann-Whitney U test p-values for concept selectivity
-- **NEW** Synapse tracking timeseries (token-by-token x_sparse for example sentences)
-- **NEW** Selectivity histogram (distribution of neuron selectivities)
+V2 REWRITE — addresses fundamental issues:
+1. Sentence-level extraction at concept-word positions (not single-word mean-pool)
+2. Position-level selectivity from diverse sentence corpus
+3. Contrastive cross-concept with contextualized fingerprints
+4. Proper French words for all concepts (model is French-trained)
+5. sigma synapse tracking with concept-selective delta-sigma discovery
+
+Generates a single JSON file consumed by the frontend.
 
 Usage:
     python scripts/precompute_monosemanticity.py \
@@ -24,7 +21,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 
 import numpy as np
 import torch
@@ -34,31 +31,33 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "training"))
 from bdh import BDH, BDHConfig, ExtractionConfig, load_model  # noqa: E402
 
-# ── Curated categories (must match frontend PRESETS) ─────────────────
+# ══════════════════════════════════════════════════════════════════════
+#  CURATED CATEGORIES — all words in French (model trained on FR text)
+# ══════════════════════════════════════════════════════════════════════
 CATEGORIES: Dict[str, Dict[str, Any]] = {
     "currencies": {
         "name": "Currencies",
-        "icon": "💰",
+        "icon": "\U0001f4b0",
         "words": ["dollar", "euro", "franc", "yen"],
     },
     "countries": {
         "name": "Countries",
-        "icon": "🌍",
-        "words": ["france", "germany", "spain", "italy"],
+        "icon": "\U0001f30d",
+        "words": ["france", "allemagne", "espagne", "italie"],
     },
     "languages": {
         "name": "Languages",
-        "icon": "🗣️",
-        "words": ["anglais", "français", "espagnol", "allemand"],
+        "icon": "\U0001f5e3\ufe0f",
+        "words": ["anglais", "fran\u00e7ais", "espagnol", "allemand"],
     },
     "politics": {
         "name": "Politics",
-        "icon": "⚖️",
+        "icon": "\u2696\ufe0f",
         "words": ["parlement", "commission", "conseil", "vote"],
     },
 }
 
-# Cross-concept pairs to pre-compute (primary, secondary)
+# Cross-concept pairs to pre-compute
 CROSS_PAIRS = [
     ("currencies", "countries"),
     ("currencies", "languages"),
@@ -66,36 +65,352 @@ CROSS_PAIRS = [
     ("languages", "politics"),
 ]
 
-# ── Example sentences for synapse tracking ──────────────────────────
-# Each sentence embeds a concept word in natural context so we can
-# track x_sparse neuron activations token-by-token.
-TRACKING_SENTENCES: Dict[str, List[str]] = {
+# ══════════════════════════════════════════════════════════════════════
+#  SENTENCE CORPUS — diverse French sentences with concept words
+#  Each sentence embeds concept words in natural EU parliament / news
+#  context so the model can build contextual representations.
+#  ~13 sentences per concept word, ~52 per concept category.
+# ══════════════════════════════════════════════════════════════════════
+SENTENCE_CORPUS: Dict[str, List[str]] = {
     "currencies": [
-        "le dollar est la monnaie des États-Unis",
-        "un euro vaut environ un dollar aujourd'hui",
-        "le parlement a voté pour le budget en euro",
+        # dollar (13 sentences)
+        "le dollar am\u00e9ricain reste la monnaie de r\u00e9f\u00e9rence mondiale",
+        "le cours du dollar a fortement augment\u00e9 cette semaine",
+        "la valeur du dollar influence les march\u00e9s internationaux",
+        "il faut convertir les prix en dollar pour comparer",
+        "le budget est exprim\u00e9 en dollar et en euro",
+        "les r\u00e9serves mondiales sont principalement en dollar",
+        "la dette publique est libell\u00e9e en dollar dans plusieurs pays",
+        "le dollar a perdu du terrain face aux autres devises",
+        "les mati\u00e8res premi\u00e8res sont cot\u00e9es en dollar sur les march\u00e9s",
+        "la politique am\u00e9ricaine a un impact direct sur le dollar",
+        "le commerce international d\u00e9pend largement du dollar",
+        "les pays exportateurs de p\u00e9trole vendent en dollar",
+        "la chute du dollar a provoqu\u00e9 une crise de confiance",
+        # euro (13 sentences)
+        "la zone euro comprend dix-neuf pays europ\u00e9ens",
+        "le taux de change de l'euro reste relativement stable",
+        "le budget europ\u00e9en est enti\u00e8rement calcul\u00e9 en euro",
+        "un euro vaut environ un dollar vingt aujourd'hui",
+        "la stabilit\u00e9 de l'euro d\u00e9pend de la politique mon\u00e9taire",
+        "la banque centrale europ\u00e9enne g\u00e8re la politique de l'euro",
+        "les citoyens de la zone euro utilisent une monnaie commune",
+        "le passage \u00e0 l'euro a transform\u00e9 les \u00e9changes commerciaux",
+        "la valeur de l'euro a augment\u00e9 par rapport au yen",
+        "les obligations d'\u00e9tat sont \u00e9mises en euro dans la zone",
+        "le march\u00e9 unique fonctionne gr\u00e2ce \u00e0 l'euro",
+        "les transactions financi\u00e8res en euro sont en forte croissance",
+        "la force de l'euro renforce la position europ\u00e9enne",
+        # franc (13 sentences)
+        "le franc suisse est consid\u00e9r\u00e9 comme une valeur refuge",
+        "le franc a \u00e9t\u00e9 la monnaie fran\u00e7aise pendant des si\u00e8cles",
+        "la conversion du franc en euro a eu lieu en deux mille deux",
+        "le cours du franc reste stable face aux autres devises",
+        "le franc belge a \u00e9galement \u00e9t\u00e9 remplac\u00e9 par l'euro",
+        "la nostalgie du franc persiste chez certains citoyens",
+        "le franc africain est utilis\u00e9 dans plusieurs pays du continent",
+        "les prix \u00e9taient affich\u00e9s en franc avant la transition",
+        "le franc suisse attire les investisseurs en p\u00e9riode de crise",
+        "la parit\u00e9 du franc avec l'euro a \u00e9t\u00e9 fix\u00e9e d\u00e9finitivement",
+        "les salaires \u00e9taient vers\u00e9s en franc avant deux mille deux",
+        "le franc a jou\u00e9 un r\u00f4le central dans l'\u00e9conomie fran\u00e7aise",
+        "la valeur du franc variait selon les accords mon\u00e9taires",
+        # yen (13 sentences)
+        "le yen japonais a atteint un nouveau record historique",
+        "les investisseurs internationaux se tournent vers le yen",
+        "le cours du yen reste tr\u00e8s volatil cette ann\u00e9e",
+        "la banque centrale contr\u00f4le la valeur du yen",
+        "le yen est la troisi\u00e8me monnaie la plus \u00e9chang\u00e9e au monde",
+        "la faiblesse du yen favorise les exportations japonaises",
+        "les touristes europ\u00e9ens profitent du taux favorable du yen",
+        "le yen a subi une d\u00e9pr\u00e9ciation significative cette ann\u00e9e",
+        "les r\u00e9serves de change incluent une part importante en yen",
+        "le rapport entre l'euro et le yen fluctue consid\u00e9rablement",
+        "la hausse du yen inqui\u00e8te les march\u00e9s asiatiques",
+        "les obligations japonaises sont libell\u00e9es en yen",
+        "le yen reste un indicateur cl\u00e9 de l'\u00e9conomie mondiale",
     ],
     "countries": [
-        "la france est un pays européen important",
-        "le spain a une culture riche et diversifiée",
-        "le parlement de germany se réunit chaque semaine",
+        # france (13 sentences)
+        "la france est un membre fondateur de l'union europ\u00e9enne",
+        "le pr\u00e9sident de la france a prononc\u00e9 un discours important",
+        "la france a soutenu cette r\u00e9solution au conseil europ\u00e9en",
+        "les exportations de la france ont augment\u00e9 ce trimestre",
+        "la france participe activement aux n\u00e9gociations commerciales",
+        "la france et l'allemagne forment le moteur de l'europe",
+        "le syst\u00e8me \u00e9ducatif de la france est reconnu mondialement",
+        "la france accueille chaque ann\u00e9e des millions de touristes",
+        "la recherche scientifique en france b\u00e9n\u00e9ficie de fonds europ\u00e9ens",
+        "la france a propos\u00e9 un plan ambitieux pour le climat",
+        "le secteur agricole de la france est le plus grand d'europe",
+        "la france d\u00e9fend une politique \u00e9trang\u00e8re ind\u00e9pendante",
+        "la contribution de la france au budget europ\u00e9en est significative",
+        # allemagne (13 sentences)
+        "l'allemagne est la premi\u00e8re \u00e9conomie du continent europ\u00e9en",
+        "le gouvernement de l'allemagne propose un nouveau budget",
+        "l'allemagne a vot\u00e9 en faveur de cette directive",
+        "les industries de l'allemagne exportent dans le monde entier",
+        "l'allemagne investit massivement dans les \u00e9nergies renouvelables",
+        "le march\u00e9 du travail en allemagne reste dynamique et comp\u00e9titif",
+        "l'allemagne accueille de nombreux travailleurs europ\u00e9ens qualifi\u00e9s",
+        "la politique \u00e9nerg\u00e9tique de l'allemagne est en pleine transition",
+        "l'allemagne soutient la coop\u00e9ration bilat\u00e9rale avec ses voisins",
+        "les universit\u00e9s de l'allemagne attirent des \u00e9tudiants du monde entier",
+        "l'allemagne joue un r\u00f4le majeur dans les institutions europ\u00e9ennes",
+        "la r\u00e9unification de l'allemagne a transform\u00e9 l'europe moderne",
+        "l'allemagne milite pour une politique budg\u00e9taire europ\u00e9enne stricte",
+        # espagne (13 sentences)
+        "l'espagne a rejoint l'union europ\u00e9enne en mille neuf cent quatre-vingt-six",
+        "le tourisme en espagne contribue fortement \u00e0 son \u00e9conomie",
+        "l'espagne a adopt\u00e9 des r\u00e9formes \u00e9conomiques importantes",
+        "la croissance de l'espagne d\u00e9passe la moyenne europ\u00e9enne",
+        "l'espagne poss\u00e8de un riche patrimoine culturel et historique",
+        "les r\u00e9gions autonomes de l'espagne ont des comp\u00e9tences \u00e9tendues",
+        "l'agriculture en espagne b\u00e9n\u00e9ficie des aides europ\u00e9ennes",
+        "l'espagne est un partenaire commercial essentiel pour la france",
+        "le ch\u00f4mage en espagne a significativement diminu\u00e9 ces derni\u00e8res ann\u00e9es",
+        "l'espagne investit dans les infrastructures de transport modernes",
+        "les \u00e9nergies solaires en espagne repr\u00e9sentent un secteur en expansion",
+        "l'espagne participe activement aux missions europ\u00e9ennes de d\u00e9fense",
+        "la politique migratoire de l'espagne fait l'objet de d\u00e9bats",
+        # italie (13 sentences)
+        "l'italie est connue pour son patrimoine culturel exceptionnel",
+        "le gouvernement de l'italie fait face \u00e0 des d\u00e9fis \u00e9conomiques",
+        "l'italie a ratifi\u00e9 le trait\u00e9 de lisbonne rapidement",
+        "les r\u00e9gions du nord de l'italie sont tr\u00e8s industrialis\u00e9es",
+        "l'italie d\u00e9fend la politique agricole commune au sein de l'europe",
+        "le secteur textile de l'italie est r\u00e9put\u00e9 dans le monde entier",
+        "l'italie accueille de nombreux sommets internationaux chaque ann\u00e9e",
+        "la dette publique de l'italie pr\u00e9occupe les march\u00e9s financiers",
+        "l'italie milite pour une r\u00e9forme du syst\u00e8me d'asile europ\u00e9en",
+        "les exportations alimentaires de l'italie sont en constante augmentation",
+        "l'italie et la france partagent des fronti\u00e8res et des int\u00e9r\u00eats communs",
+        "le tourisme culturel en italie attire des visiteurs du monde entier",
+        "l'italie contribue activement aux programmes spatiaux europ\u00e9ens",
     ],
     "languages": [
-        "il parle couramment français et anglais",
-        "l'espagnol est parlé dans de nombreux pays",
-        "le vote était en français au parlement",
+        # anglais (13 sentences)
+        "les documents officiels sont disponibles en anglais et en fran\u00e7ais",
+        "la traduction en anglais est obligatoire pour les textes europ\u00e9ens",
+        "il parle couramment anglais depuis son enfance",
+        "les d\u00e9bats sont souvent men\u00e9s en anglais au parlement",
+        "l'anglais est la langue la plus utilis\u00e9e dans les institutions",
+        "la ma\u00eetrise de l'anglais est un atout professionnel majeur",
+        "les conf\u00e9rences scientifiques se tiennent principalement en anglais",
+        "l'enseignement de l'anglais commence d\u00e8s l'\u00e9cole primaire",
+        "les n\u00e9gociations commerciales se d\u00e9roulent souvent en anglais",
+        "les publications acad\u00e9miques sont majoritairement r\u00e9dig\u00e9es en anglais",
+        "l'anglais sert de lingua franca dans les organisations internationales",
+        "la domination de l'anglais dans les m\u00e9dias est un sujet de d\u00e9bat",
+        "les start-ups europ\u00e9ennes communiquent souvent en anglais",
+        # fran\u00e7ais (13 sentences)
+        "le fran\u00e7ais est une langue officielle de l'union europ\u00e9enne",
+        "les discours sont prononc\u00e9s en fran\u00e7ais lors des s\u00e9ances",
+        "apprendre le fran\u00e7ais est populaire dans de nombreux pays",
+        "la version en fran\u00e7ais du rapport est maintenant disponible",
+        "le fran\u00e7ais reste la langue diplomatique par excellence",
+        "l'enseignement du fran\u00e7ais se d\u00e9veloppe rapidement en afrique",
+        "le fran\u00e7ais est parl\u00e9 sur les cinq continents du globe",
+        "la richesse litt\u00e9raire du fran\u00e7ais est reconnue mondialement",
+        "les institutions de la francophonie promeuvent le fran\u00e7ais",
+        "le fran\u00e7ais occupe une place importante aux nations unies",
+        "la d\u00e9fense du fran\u00e7ais face \u00e0 l'anglais mobilise les intellectuels",
+        "les \u00e9tudiants \u00e9trangers choisissent souvent d'apprendre le fran\u00e7ais",
+        "le fran\u00e7ais juridique est utilis\u00e9 dans les cours europ\u00e9ennes",
+        # espagnol (13 sentences)
+        "l'espagnol est parl\u00e9 dans de nombreux pays du monde",
+        "la traduction en espagnol sera disponible prochainement",
+        "les communaut\u00e9s qui parlent espagnol sont tr\u00e8s diverses",
+        "il ma\u00eetrise parfaitement l'espagnol et le portugais",
+        "l'espagnol est la deuxi\u00e8me langue maternelle la plus r\u00e9pandue",
+        "les cours en espagnol attirent de plus en plus d'\u00e9tudiants",
+        "la litt\u00e9rature en espagnol a produit de grands auteurs",
+        "l'espagnol est une langue officielle aux nations unies",
+        "les m\u00e9dias en espagnol touchent un public de plusieurs centaines de millions",
+        "apprendre l'espagnol ouvre des portes en am\u00e9rique latine",
+        "l'espagnol et le portugais partagent de nombreuses similitudes",
+        "les \u00e9changes culturels en espagnol enrichissent la diversit\u00e9 europ\u00e9enne",
+        "la demande pour des traducteurs en espagnol ne cesse de cro\u00eetre",
+        # allemand (13 sentences)
+        "l'allemand est la langue maternelle la plus parl\u00e9e en europe",
+        "les textes juridiques sont traduits en allemand syst\u00e9matiquement",
+        "parler allemand est un atout sur le march\u00e9 du travail",
+        "la version en allemand du document sera publi\u00e9e demain",
+        "l'allemand est enseign\u00e9 dans de nombreuses \u00e9coles europ\u00e9ennes",
+        "les publications techniques sont souvent disponibles en allemand",
+        "la philosophie et la science comptent de grands textes en allemand",
+        "l'allemand est une langue germanique parl\u00e9e aussi en autriche",
+        "les touristes apprennent quelques mots en allemand avant de voyager",
+        "la traduction en allemand des directives est une obligation l\u00e9gale",
+        "l'allemand technique est indispensable dans l'industrie automobile",
+        "les programmes d'\u00e9change encouragent l'apprentissage de l'allemand",
+        "la connaissance de l'allemand facilite les relations commerciales",
     ],
     "politics": [
-        "le parlement européen a voté ce matin",
-        "la commission propose un nouveau budget",
-        "le conseil a adopté cette résolution",
+        # parlement (13 sentences)
+        "le parlement europ\u00e9en a vot\u00e9 cette r\u00e9solution ce matin",
+        "les d\u00e9put\u00e9s du parlement ont d\u00e9battu pendant des heures",
+        "le parlement si\u00e8ge alternativement \u00e0 strasbourg et bruxelles",
+        "la session du parlement a \u00e9t\u00e9 particuli\u00e8rement mouvement\u00e9e",
+        "le r\u00f4le du parlement est de repr\u00e9senter les citoyens",
+        "le parlement a adopt\u00e9 un amendement sur la politique agricole",
+        "la commission pr\u00e9sente son rapport annuel devant le parlement",
+        "le pr\u00e9sident du parlement a ouvert la s\u00e9ance pl\u00e9ni\u00e8re",
+        "les groupes politiques du parlement pr\u00e9parent leurs propositions",
+        "le parlement contr\u00f4le l'utilisation du budget communautaire",
+        "les auditions du parlement permettent un examen approfondi",
+        "le parlement d\u00e9bat des priorit\u00e9s l\u00e9gislatives de la session",
+        "la transparence du parlement s'am\u00e9liore gr\u00e2ce aux nouvelles r\u00e8gles",
+        # commission (13 sentences)
+        "la commission europ\u00e9enne propose un nouveau r\u00e8glement ambitieux",
+        "le pr\u00e9sident de la commission a pr\u00e9sent\u00e9 son programme",
+        "la commission travaille sur une directive environnementale",
+        "les membres de la commission se r\u00e9unissent chaque semaine",
+        "la commission a lanc\u00e9 une consultation publique sur le sujet",
+        "le rapport de la commission sera publi\u00e9 le mois prochain",
+        "la commission surveille le respect des trait\u00e9s par les \u00e9tats membres",
+        "la commission n\u00e9gocie les accords commerciaux au nom de l'union",
+        "les priorit\u00e9s de la commission incluent le num\u00e9rique et le climat",
+        "la commission dispose du pouvoir d'initiative l\u00e9gislative",
+        "le coll\u00e8ge des commissaires de la commission vote les propositions",
+        "la commission europ\u00e9enne emploie des milliers de fonctionnaires",
+        "les d\u00e9cisions de la commission affectent directement les citoyens",
+        # conseil (13 sentences)
+        "le conseil de l'union europ\u00e9enne a adopt\u00e9 cette position",
+        "la pr\u00e9sidence du conseil change tous les six mois",
+        "le conseil a approuv\u00e9 le budget pour l'ann\u00e9e prochaine",
+        "les ministres du conseil d\u00e9battent des politiques communes",
+        "le conseil europ\u00e9en fixe les orientations politiques g\u00e9n\u00e9rales",
+        "les r\u00e9unions du conseil se tiennent r\u00e9guli\u00e8rement \u00e0 bruxelles",
+        "le conseil statue \u00e0 la majorit\u00e9 qualifi\u00e9e sur la plupart des sujets",
+        "la position commune du conseil a \u00e9t\u00e9 transmise au parlement",
+        "le conseil a adopt\u00e9 des sanctions contre certains pays tiers",
+        "les travaux pr\u00e9paratoires du conseil sont men\u00e9s par le coreper",
+        "le conseil et le parlement col\u00e9gif\u00e8rent sur la majorit\u00e9 des textes",
+        "le conseil des affaires \u00e9trang\u00e8res coordonne la politique ext\u00e9rieure",
+        "les conclusions du conseil orientent les politiques des \u00e9tats membres",
+        # vote (13 sentences)
+        "le vote sur cette proposition a \u00e9t\u00e9 report\u00e9 \u00e0 demain",
+        "chaque d\u00e9put\u00e9 dispose d'un seul vote lors du scrutin",
+        "le r\u00e9sultat du vote a \u00e9t\u00e9 annonc\u00e9 en s\u00e9ance pl\u00e9ni\u00e8re",
+        "le vote \u00e9lectronique permet un d\u00e9compte rapide et pr\u00e9cis",
+        "le vote par appel nominal est demand\u00e9 par cinquante d\u00e9put\u00e9s",
+        "la proc\u00e9dure de vote exige une majorit\u00e9 absolue des membres",
+        "les abstentions lors du vote refl\u00e8tent des divisions internes",
+        "le vote final sur le budget a lieu en d\u00e9cembre",
+        "les d\u00e9put\u00e9s expriment leur position par un vote solennel",
+        "le vote a confirm\u00e9 le soutien du parlement \u00e0 cette initiative",
+        "chaque \u00e9tat membre dispose d'un nombre de vote pond\u00e9r\u00e9",
+        "le vote de d\u00e9fiance peut renverser la commission",
+        "la majorit\u00e9 n\u00e9cessaire pour le vote d\u00e9pend du type de proc\u00e9dure",
+    ],
+}
+
+# Sentences for synapse tracking (diverse contexts, 8 sentences per concept)
+TRACKING_SENTENCES: Dict[str, List[str]] = {
+    "currencies": [
+        "le dollar est la monnaie officielle des \u00e9tats-unis",
+        "un euro vaut environ un dollar vingt aujourd'hui",
+        "le parlement a vot\u00e9 pour le budget en euro",
+        "le franc suisse reste tr\u00e8s stable cette ann\u00e9e",
+        "les march\u00e9s internationaux surveillent le cours du yen",
+        "la politique mon\u00e9taire affecte directement la valeur du dollar",
+        "les obligations en euro offrent un rendement int\u00e9ressant",
+        "la conversion du franc en euro a simplifi\u00e9 les \u00e9changes",
+    ],
+    "countries": [
+        "la france est un pays europ\u00e9en tr\u00e8s important",
+        "le gouvernement de l'allemagne propose un budget ambitieux",
+        "le tourisme en espagne repr\u00e9sente une part majeure",
+        "les r\u00e9gions du nord de l'italie sont industrialis\u00e9es",
+        "la france et l'allemagne coop\u00e8rent dans de nombreux domaines",
+        "l'espagne a adopt\u00e9 des r\u00e9formes \u00e9conomiques significatives",
+        "l'italie contribue activement aux projets europ\u00e9ens",
+        "la france d\u00e9fend sa position sur la politique agricole commune",
+    ],
+    "languages": [
+        "il parle couramment fran\u00e7ais et anglais depuis toujours",
+        "l'espagnol est la deuxi\u00e8me langue la plus parl\u00e9e au monde",
+        "les textes juridiques sont traduits en allemand et en fran\u00e7ais",
+        "l'anglais reste la langue principale des \u00e9changes commerciaux",
+        "apprendre le fran\u00e7ais est tr\u00e8s populaire en afrique",
+        "l'allemand technique est essentiel dans l'industrie europ\u00e9enne",
+        "les publications scientifiques sont lu en anglais partout",
+        "la traduction en espagnol des textes officiels est obligatoire",
+    ],
+    "politics": [
+        "le parlement europ\u00e9en a vot\u00e9 cette r\u00e9solution ce matin",
+        "la commission propose un nouveau r\u00e8glement tr\u00e8s ambitieux",
+        "le conseil a adopt\u00e9 cette r\u00e9solution \u00e0 l'unanimit\u00e9",
+        "le r\u00e9sultat du vote a surpris tous les observateurs",
+        "le parlement et la commission travaillent ensemble sur ce texte",
+        "les d\u00e9put\u00e9s du parlement d\u00e9battent des priorit\u00e9s l\u00e9gislatives",
+        "le conseil europ\u00e9en fixe les grandes orientations politiques",
+        "la proc\u00e9dure de vote exige une majorit\u00e9 absolue des membres",
     ],
 }
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  HELPERS
+# ══════════════════════════════════════════════════════════════════════
+
+def _split_sentence_to_words(sentence: str) -> List[Tuple[str, int, int]]:
+    """
+    Split a sentence into words with their byte-range positions.
+    Returns: [(word, byte_start, byte_end), ...]
+    """
+    words: List[Tuple[str, int, int]] = []
+    byte_pos = 0
+    for word in sentence.split(" "):
+        word_bytes = len(word.encode("utf-8"))
+        words.append((word, byte_pos, byte_pos + word_bytes))
+        byte_pos += word_bytes + 1  # +1 for the space byte
+    return words
+
+
+def _is_concept_word(token: str, concept_words_set: set) -> bool:
+    """Check if a token matches a concept word, handling l'/d' prefixes."""
+    clean = token.strip(".,;:!?'\"()").lower()
+    if clean in concept_words_set:
+        return True
+    if clean.startswith("l'") and clean[2:] in concept_words_set:
+        return True
+    if clean.startswith("d'") and clean[2:] in concept_words_set:
+        return True
+    return False
+
+
+def _find_word_in_sentence(sentence: str, target_word: str) -> Optional[Tuple[int, int]]:
+    """
+    Find the byte range of a target word in a sentence.
+    Returns (byte_start, byte_end) or None if not found.
+    Handles French articles: l', d'.
+    """
+    words_with_positions = _split_sentence_to_words(sentence.lower())
+    target_lower = target_word.lower()
+
+    for word, byte_start, byte_end in words_with_positions:
+        clean_word = word.strip(".,;:!?'\"()").lower()
+        if clean_word == target_lower:
+            return (byte_start, byte_end)
+        if clean_word.startswith("l'") and clean_word[2:] == target_lower:
+            prefix_bytes = len("l'".encode("utf-8"))
+            return (byte_start + prefix_bytes, byte_end)
+        if clean_word.startswith("d'") and clean_word[2:] == target_lower:
+            prefix_bytes = len("d'".encode("utf-8"))
+            return (byte_start + prefix_bytes, byte_end)
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  PHASE 1: SENTENCE-LEVEL FINGERPRINTING
+# ══════════════════════════════════════════════════════════════════════
+
 def extract_fingerprint(
     model: BDH,
-    words: List[str],
+    concept_words: List[str],
+    sentences: List[str],
     concept_name: str,
     device: str,
     n_layers: int,
@@ -103,81 +418,120 @@ def extract_fingerprint(
     n_neurons: int,
 ) -> Dict[str, Any]:
     """
-    Run words through model and return a FingerprintResult-shaped dict.
-    Matches the /neuron-fingerprint backend response exactly.
+    Extract contextualized fingerprints by running full sentences and
+    extracting x_sparse at the byte-position of each concept word.
+
+    For each concept word:
+    1. Find all sentences containing that word
+    2. Run each sentence through the model
+    3. Extract x_sparse at the byte positions of the concept word
+    4. Average across all sentence occurrences
+
+    This produces CONTEXTUALIZED fingerprints where neuron activations
+    reflect the word's meaning in sentence context, not just its byte pattern.
     """
     word_fingerprints: List[Dict] = []
-    # raw_x[layer][head] = list of (N,) numpy arrays, one per word
     raw_x: Dict[int, Dict[int, list]] = {}
 
-    for text in words:
-        tokens = torch.tensor(
-            [list(text.encode("utf-8"))],
-            dtype=torch.long,
-            device=device,
-        )
-        extraction_config = ExtractionConfig(
-            capture_sparse_activations=True,
-            capture_attention_patterns=False,
-        )
+    for word in concept_words:
+        matching_sentences = [s for s in sentences if _find_word_in_sentence(s, word) is not None]
 
+        if not matching_sentences:
+            print(f"     \u26a0 No sentences for '{word}' \u2014 using single word")
+            matching_sentences = [word]
+
+        # Accumulate x_sparse across sentences: layer -> head -> (total_vec, count)
+        accum_x: Dict[int, Dict[int, Tuple[np.ndarray, int]]] = {}
+
+        for sent in matching_sentences:
+            tokens = torch.tensor(
+                [list(sent.encode("utf-8"))],
+                dtype=torch.long,
+                device=device,
+            )
+            word_pos = _find_word_in_sentence(sent, word)
+            if word_pos is None:
+                continue
+            byte_start, byte_end = word_pos
+
+            extraction_config = ExtractionConfig(
+                capture_sparse_activations=True,
+                capture_attention_patterns=False,
+            )
+
+            with torch.no_grad():
+                with model.extraction_mode(extraction_config) as buffer:
+                    model(tokens)
+
+                    for layer_idx in sorted(buffer.x_sparse.keys()):
+                        x = buffer.x_sparse[layer_idx][0]  # (nh, T, N)
+                        T = x.shape[1]
+
+                        if layer_idx not in accum_x:
+                            accum_x[layer_idx] = {}
+
+                        for h in range(n_heads):
+                            # Average over bytes comprising the target word
+                            word_vecs = []
+                            for pos in range(byte_start, min(byte_end, T)):
+                                word_vecs.append(x[h, pos].cpu().numpy())
+                            if word_vecs:
+                                avg_vec = np.mean(word_vecs, axis=0)
+                                if h not in accum_x[layer_idx]:
+                                    accum_x[layer_idx][h] = (avg_vec.copy(), 1)
+                                else:
+                                    prev, cnt = accum_x[layer_idx][h]
+                                    accum_x[layer_idx][h] = (prev + avg_vec, cnt + 1)
+
+        # Build fingerprint per word
         layers_data: List[Dict] = []
-        with torch.no_grad():
-            with model.extraction_mode(extraction_config) as buffer:
-                model(tokens)
+        for layer_idx in sorted(accum_x.keys()):
+            heads_data: List[Dict] = []
+            for h in range(n_heads):
+                if h in accum_x[layer_idx]:
+                    total_vec, cnt = accum_x[layer_idx][h]
+                    x_mean = total_vec / cnt
+                else:
+                    x_mean = np.zeros(n_neurons)
 
-                for layer_idx in sorted(buffer.x_sparse.keys()):
-                    x = buffer.x_sparse[layer_idx][0]  # (nh, T, N)
+                bins = 64
+                stride = max(1, n_neurons // bins)
+                x_ds = []
+                for b in range(bins):
+                    start = b * stride
+                    end = min(start + stride, n_neurons)
+                    x_ds.append(float(x_mean[start:end].max()))
 
-                    heads_data: List[Dict] = []
-                    for h in range(n_heads):
-                        x_mean = x[h].mean(dim=0).cpu().numpy()  # (N,)
+                x_active = int((x_mean > 0).sum())
 
-                        # Downsample to 64 bins
-                        bins = 64
-                        stride = max(1, n_neurons // bins)
-                        x_ds = []
-                        for b in range(bins):
-                            start = b * stride
-                            end = min(start + stride, n_neurons)
-                            x_ds.append(float(x_mean[start:end].max()))
+                top_k = 20
+                top_idx = np.argsort(x_mean)[-top_k:][::-1]
+                top_neurons = [
+                    {"idx": int(i), "val": round(float(x_mean[i]), 5)}
+                    for i in top_idx if x_mean[i] > 0
+                ]
 
-                        x_active = int((x_mean > 0).sum())
+                heads_data.append({
+                    "head": h,
+                    "x_ds": x_ds,
+                    "x_active": x_active,
+                    "top_neurons": top_neurons,
+                })
 
-                        # Top-K neurons
-                        top_k = 20
-                        top_idx = np.argsort(x_mean)[-top_k:][::-1]
-                        top_neurons = [
-                            {"idx": int(i), "val": round(float(x_mean[i]), 5)}
-                            for i in top_idx
-                            if x_mean[i] > 0
-                        ]
+                raw_x.setdefault(layer_idx, {}).setdefault(h, []).append(x_mean)
 
-                        heads_data.append(
-                            {
-                                "head": h,
-                                "x_ds": x_ds,
-                                "x_active": x_active,
-                                "top_neurons": top_neurons,
-                            }
-                        )
+            layers_data.append({"layer": layer_idx, "heads": heads_data})
 
-                        raw_x.setdefault(layer_idx, {}).setdefault(h, []).append(
-                            x_mean
-                        )
+        word_fingerprints.append({"word": word, "layers": layers_data})
 
-                    layers_data.append({"layer": layer_idx, "heads": heads_data})
-
-        word_fingerprints.append({"word": text, "layers": layers_data})
-
-    # ── Cosine similarity matrix (per layer, averaged across heads) ──
-    n_words = len(words)
+    # ── Cosine similarity (per layer, avg across heads) ──
+    n_words = len(concept_words)
     similarity_by_layer: Dict[str, list] = {}
 
     for layer_idx in sorted(raw_x.keys()):
         sim_matrix = np.zeros((n_words, n_words))
         for h in range(n_heads):
-            vecs = np.stack(raw_x[layer_idx][h])  # (n_words, N)
+            vecs = np.stack(raw_x[layer_idx][h])
             norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10
             normed = vecs / norms
             cos = normed @ normed.T
@@ -192,7 +546,7 @@ def extract_fingerprint(
     shared_neurons: List[Dict] = []
     for layer_idx in sorted(raw_x.keys()):
         for h in range(n_heads):
-            acts = np.stack(raw_x[layer_idx][h])  # (n_words, N)
+            acts = np.stack(raw_x[layer_idx][h])
             active_mask = acts > 0
             all_active = active_mask.all(axis=0)
             shared_idx = np.where(all_active)[0]
@@ -202,19 +556,14 @@ def extract_fingerprint(
                 sort_order = np.argsort(mean_vals)[::-1][:5]
                 for rank in sort_order:
                     nidx = int(shared_idx[rank])
-                    shared_neurons.append(
-                        {
-                            "layer": int(layer_idx),
-                            "head": int(h),
-                            "neuron": nidx,
-                            "mean_activation": round(float(mean_vals[rank]), 5),
-                            "active_in": n_words,
-                            "per_word": [
-                                round(float(acts[w, nidx]), 5)
-                                for w in range(n_words)
-                            ],
-                        }
-                    )
+                    shared_neurons.append({
+                        "layer": int(layer_idx),
+                        "head": int(h),
+                        "neuron": nidx,
+                        "mean_activation": round(float(mean_vals[rank]), 5),
+                        "active_in": n_words,
+                        "per_word": [round(float(acts[w, nidx]), 5) for w in range(n_words)],
+                    })
 
     shared_neurons.sort(key=lambda s: s["mean_activation"], reverse=True)
 
@@ -223,42 +572,40 @@ def extract_fingerprint(
         "words": word_fingerprints,
         "similarity": similarity_by_layer,
         "shared_neurons": shared_neurons[:40],
-        "model_info": {
-            "n_layers": n_layers,
-            "n_heads": n_heads,
-            "n_neurons": n_neurons,
-        },
-        "raw_x": raw_x,  # kept temporarily for selectivity computation
+        "model_info": {"n_layers": n_layers, "n_heads": n_heads, "n_neurons": n_neurons},
+        "raw_x": raw_x,
     }
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  PHASE 2: BEST LAYER
+# ══════════════════════════════════════════════════════════════════════
+
 def compute_best_layer(concepts: Dict[str, Any], n_layers: int) -> int:
-    """
-    Find the layer with the highest average within-concept cosine similarity.
-    This is the "most monosemantic" layer for the narrative default.
-    """
+    """Find the layer with highest avg within-concept cosine similarity."""
     layer_scores: Dict[int, List[float]] = {l: [] for l in range(n_layers)}
     for _cid, result in concepts.items():
         sim = result["similarity"]
         for layer_str, matrix in sim.items():
             layer_idx = int(layer_str)
             n = len(matrix)
-            total = sum(
-                matrix[i][j] for i in range(n) for j in range(n) if i != j
-            )
+            total = sum(matrix[i][j] for i in range(n) for j in range(n) if i != j)
             count = n * (n - 1) if n > 1 else 1
             layer_scores[layer_idx].append(total / count)
-
     avg_scores = {l: np.mean(v) for l, v in layer_scores.items() if v}
     return int(max(avg_scores, key=avg_scores.get))
 
+
+# ══════════════════════════════════════════════════════════════════════
+#  PHASE 3: CROSS-CONCEPT DISTINCTNESS
+# ══════════════════════════════════════════════════════════════════════
 
 def compute_cross_concept(
     concepts: Dict[str, Any], n_layers: int, n_heads: int
 ) -> List[Dict]:
     """
-    For each CROSS_PAIR, compute per-layer Jaccard distinctness between
-    top-neuron sets of the two concepts.
+    Per-layer Jaccard distinctness between top neuron sets of two concepts.
+    Now uses CONTEXTUALIZED fingerprints.
     """
     cross_results: List[Dict] = []
     for primary_id, secondary_id in CROSS_PAIRS:
@@ -273,168 +620,173 @@ def compute_cross_concept(
             for w in p_result["words"]:
                 layer = next((la for la in w["layers"] if la["layer"] == l), None)
                 if layer:
-                    for h in layer["heads"]:
-                        for n in h["top_neurons"]:
-                            p_neurons.add(f"{h['head']}_{n['idx']}")
+                    for h_data in layer["heads"]:
+                        for n in h_data["top_neurons"]:
+                            p_neurons.add(f"{h_data['head']}_{n['idx']}")
 
             s_neurons = set()
             for w in s_result["words"]:
                 layer = next((la for la in w["layers"] if la["layer"] == l), None)
                 if layer:
-                    for h in layer["heads"]:
-                        for n in h["top_neurons"]:
-                            s_neurons.add(f"{h['head']}_{n['idx']}")
+                    for h_data in layer["heads"]:
+                        for n in h_data["top_neurons"]:
+                            s_neurons.add(f"{h_data['head']}_{n['idx']}")
 
             intersection = len(p_neurons & s_neurons)
-            union = len(p_neurons | s_neurons)
+            union_size = len(p_neurons | s_neurons)
             distinctness_per_layer.append(
-                round(1 - intersection / union, 4) if union > 0 else 1.0
+                round(1 - intersection / union_size, 4) if union_size > 0 else 1.0
             )
 
-        # Strip raw_x from secondary result before embedding
         s_clean = {k: v for k, v in s_result.items() if k != "raw_x"}
-        cross_results.append(
-            {
-                "primary": primary_id,
-                "secondary": secondary_id,
-                "distinctness_per_layer": distinctness_per_layer,
-                "secondary_result": s_clean,
-            }
-        )
+        cross_results.append({
+            "primary": primary_id,
+            "secondary": secondary_id,
+            "distinctness_per_layer": distinctness_per_layer,
+            "secondary_result": s_clean,
+        })
 
     return cross_results
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  PHASE 4: POSITION-LEVEL SELECTIVITY
+# ══════════════════════════════════════════════════════════════════════
+
 def compute_selectivity(
-    concepts: Dict[str, Any],
+    model: BDH,
+    device: str,
     best_layer: int,
     n_heads: int,
     n_neurons: int,
 ) -> Dict[str, Any]:
     """
-    For each concept, compute neuron selectivity scores using all other
-    concepts as the out-of-concept contrast.
+    Compute neuron selectivity using POSITION-LEVEL activations from
+    full sentences:
 
-    Selectivity = mean_in / (mean_in + mean_out)
-    where mean_in = avg activation for words in this concept,
-          mean_out = avg activation for words in all other concepts.
+    For each concept:
+    - Run all SENTENCE_CORPUS sentences
+    - x_sparse at concept-word positions -> "in" activations
+    - x_sparse at non-concept-word positions -> "out" activations
+    - Selectivity = mean_in / (mean_in + mean_out)
 
-    Also computes Mann-Whitney U test p-values for top neurons.
-    Returns per-concept monosemantic_neurons list and global histogram.
-
-    IMPORTANT: The histogram includes ALL neurons (not just selective ones)
-    to show the full distribution — a healthy BDH model should have a
-    rightward tail, while a standard MLP would cluster near 0.5.
+    This measures whether neurons fire for concept MEANING in context,
+    not just byte patterns of isolated words.  Gives ~20 concept positions
+    and ~100 non-concept positions per concept for better Mann-Whitney.
     """
     from scipy.stats import mannwhitneyu
 
-    # First, collect per-concept activation vectors at best_layer
-    concept_vecs: Dict[str, Dict[int, np.ndarray]] = {}  # cid → {head → (n_words, N)}
-    for cid, result in concepts.items():
-        raw_x = result.get("raw_x", {})
-        if best_layer not in raw_x:
-            continue
-        head_vecs = {}
-        for h in range(n_heads):
-            if h in raw_x[best_layer]:
-                head_vecs[h] = np.stack(raw_x[best_layer][h])  # (n_words, N)
-        concept_vecs[cid] = head_vecs
+    concept_in_acts: Dict[str, Dict[int, List[np.ndarray]]] = {}
+    concept_out_acts: Dict[str, Dict[int, List[np.ndarray]]] = {}
 
-    # Collect selectivity for ALL neurons across all heads (for histogram)
+    for cid, cat in CATEGORIES.items():
+        concept_words_set = {w.lower() for w in cat["words"]}
+        sentences = SENTENCE_CORPUS.get(cid, [])
+
+        in_acts: Dict[int, List[np.ndarray]] = {h: [] for h in range(n_heads)}
+        out_acts: Dict[int, List[np.ndarray]] = {h: [] for h in range(n_heads)}
+
+        for sent in sentences:
+            tokens = torch.tensor(
+                [list(sent.encode("utf-8"))], dtype=torch.long, device=device,
+            )
+            extraction_config = ExtractionConfig(
+                capture_sparse_activations=True,
+                capture_attention_patterns=False,
+                layers_to_capture=[best_layer],
+            )
+            word_boundaries = _split_sentence_to_words(sent)
+
+            with torch.no_grad():
+                with model.extraction_mode(extraction_config) as buffer:
+                    model(tokens)
+                    x = buffer.x_sparse[best_layer][0]  # (nh, T, N)
+                    T_len = x.shape[1]
+
+                    for word, byte_start, byte_end in word_boundaries:
+                        is_concept = _is_concept_word(word, concept_words_set)
+
+                        for h in range(n_heads):
+                            word_vecs = []
+                            for pos in range(byte_start, min(byte_end, T_len)):
+                                word_vecs.append(x[h, pos].cpu().numpy())
+                            if word_vecs:
+                                avg_vec = np.mean(word_vecs, axis=0)
+                                if is_concept:
+                                    in_acts[h].append(avg_vec)
+                                else:
+                                    out_acts[h].append(avg_vec)
+
+        concept_in_acts[cid] = in_acts
+        concept_out_acts[cid] = out_acts
+
+        n_in = len(in_acts[0]) if in_acts[0] else 0
+        n_out = len(out_acts[0]) if out_acts[0] else 0
+        print(f"     {cid}: {n_in} concept positions, {n_out} non-concept positions")
+
+    # Compute selectivity per neuron
     all_selectivities: List[float] = []
-    # Only the selective ones (for per-concept tables)
     per_concept_results: Dict[str, List[Dict]] = {}
 
-    for target_cid in concepts.keys():
-        if target_cid not in concept_vecs:
-            per_concept_results[target_cid] = []
-            continue
-
-        target_words = concepts[target_cid]["words"]
-        word_names = [w["word"] for w in target_words]
+    for cid in CATEGORIES.keys():
+        in_acts = concept_in_acts.get(cid, {})
+        out_acts = concept_out_acts.get(cid, {})
+        concept_words = CATEGORIES[cid]["words"]
 
         monosemantic_neurons: List[Dict] = []
 
         for h in range(n_heads):
-            if h not in concept_vecs[target_cid]:
+            in_vecs = in_acts.get(h, [])
+            out_vecs = out_acts.get(h, [])
+            if not in_vecs or not out_vecs:
                 continue
 
-            in_acts = concept_vecs[target_cid][h]  # (n_in, N)
-            n_in = in_acts.shape[0]
+            in_arr = np.stack(in_vecs)
+            out_arr = np.stack(out_vecs)
 
-            # Collect out-of-concept activations
-            out_list = []
-            for other_cid, other_vecs in concept_vecs.items():
-                if other_cid == target_cid:
-                    continue
-                if h in other_vecs:
-                    out_list.append(other_vecs[h])
-
-            if not out_list:
-                continue
-            out_acts = np.concatenate(out_list, axis=0)  # (n_out, N)
-
-            mean_in = in_acts.mean(axis=0)   # (N,)
-            mean_out = out_acts.mean(axis=0)  # (N,)
+            mean_in = in_arr.mean(axis=0)
+            mean_out = out_arr.mean(axis=0)
 
             denom = mean_in + mean_out + 1e-10
-            selectivity = mean_in / denom  # (N,)
+            selectivity = mean_in / denom
 
-            # ── Add ALL neurons to histogram (not just >0.5) ──
-            # Only include neurons that have any activation at all
-            # (dead neurons with 0/0 aren't informative)
             active_mask = (mean_in + mean_out) > 1e-8
             active_sel = selectivity[active_mask]
             all_selectivities.extend(active_sel.tolist())
 
-            # ── For the per-concept table, keep only selective ones ──
             selective_idx = np.where((selectivity > 0.6) & active_mask)[0]
 
             for nidx in selective_idx:
                 sel_score = float(selectivity[nidx])
 
-                # Mann-Whitney U test for this neuron
-                in_vals = in_acts[:, nidx]
-                out_vals = out_acts[:, nidx]
-
+                in_vals = in_arr[:, nidx]
+                out_vals = out_arr[:, nidx]
                 try:
                     if np.std(in_vals) > 0 or np.std(out_vals) > 0:
-                        stat, pval = mannwhitneyu(
-                            in_vals, out_vals, alternative="greater"
-                        )
+                        stat, pval = mannwhitneyu(in_vals, out_vals, alternative="greater")
                     else:
                         pval = 1.0
                 except ValueError:
                     pval = 1.0
 
-                per_word_vals = [
-                    round(float(in_acts[w, nidx]), 5) for w in range(n_in)
-                ]
+                per_word_vals = [round(float(v[nidx]), 5) for v in in_vecs[:len(concept_words)]]
 
-                monosemantic_neurons.append(
-                    {
-                        "layer": best_layer,
-                        "head": h,
-                        "neuron": int(nidx),
-                        "selectivity": round(sel_score, 4),
-                        "mean_in": round(float(mean_in[nidx]), 5),
-                        "mean_out": round(float(mean_out[nidx]), 5),
-                        "p_value": round(float(pval), 8),
-                        "per_word": per_word_vals,
-                    }
-                )
+                monosemantic_neurons.append({
+                    "layer": best_layer,
+                    "head": h,
+                    "neuron": int(nidx),
+                    "selectivity": round(sel_score, 4),
+                    "mean_in": round(float(mean_in[nidx]), 5),
+                    "mean_out": round(float(mean_out[nidx]), 5),
+                    "p_value": round(float(pval), 8),
+                    "per_word": per_word_vals,
+                })
 
-        # Sort by selectivity descending
         monosemantic_neurons.sort(key=lambda n: n["selectivity"], reverse=True)
-        per_concept_results[target_cid] = monosemantic_neurons[:30]
+        per_concept_results[cid] = monosemantic_neurons[:30]
 
-    # Build selectivity histogram (20 bins from 0.0 to 1.0)
-    # This includes ALL active neurons — the shape of this distribution
-    # is the key evidence: a rightward tail = monosemantic population
     n_bins = 20
-    hist_counts, bin_edges = np.histogram(
-        all_selectivities, bins=n_bins, range=(0.0, 1.0)
-    )
+    hist_counts, bin_edges = np.histogram(all_selectivities, bins=n_bins, range=(0.0, 1.0))
     histogram = [
         {
             "bin_start": round(float(bin_edges[i]), 2),
@@ -453,24 +805,13 @@ def compute_selectivity(
         "total_neurons": total_neurons,
         "total_selective": selective_count,
         "mean_selectivity": round(float(np.mean(all_selectivities)), 4)
-        if all_selectivities
-        else 0.0,
+        if all_selectivities else 0.0,
     }
 
 
-def _split_sentence_to_words(sentence: str) -> List[Tuple[str, int, int]]:
-    """
-    Split a sentence into words with their byte-range positions.
-    Returns: [(word, byte_start, byte_end), ...]
-    """
-    words: List[Tuple[str, int, int]] = []
-    byte_pos = 0
-    for word in sentence.split(" "):
-        word_bytes = len(word.encode("utf-8"))
-        words.append((word, byte_pos, byte_pos + word_bytes))
-        byte_pos += word_bytes + 1  # +1 for the space byte
-    return words
-
+# ══════════════════════════════════════════════════════════════════════
+#  PHASE 5: SYNAPSE TRACKING
+# ══════════════════════════════════════════════════════════════════════
 
 def compute_synapse_tracking(
     model: BDH,
@@ -481,45 +822,24 @@ def compute_synapse_tracking(
     concepts: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    For each concept, discover concept-selective synapses and track their
-    σ(i,j) = Σ_{τ≤t} y_sparse[τ,i] · x_sparse[τ,j] values word-by-word.
-
-    Strategy:
-    1. Run all sentences for this concept through the model.
-    2. For each layer, compute Δσ (change in σ diagonal) at each word.
-    3. Find neurons where Δσ is consistently large at concept words and
-       small at non-concept words → these are monosemantic synapses.
-    4. Pick the layer with the best concept-selective synapses.
-    5. Build the word-level timeline for the frontend.
+    Discover concept-selective synapses and track sigma word-by-word.
     """
     tracking_data: Dict[str, Any] = {}
 
     for cid, sentences in TRACKING_SENTENCES.items():
-        concept_result = concepts.get(cid)
-        if not concept_result:
-            continue
-
-        # Get the concept's words for labelling
         concept_words = set()
         for cat_id, cat in CATEGORIES.items():
             if cat_id == cid:
                 concept_words = {w.lower() for w in cat["words"]}
                 break
 
-        # ── Phase A: Run all sentences, collect per-word Δσ for every neuron ──
-        # at each layer to discover which neurons are concept-selective
-        n_layers = model.config.n_layer
-        # per_layer_deltas[layer][head] = { neuron_idx: [(delta, is_concept), ...] }
+        n_model_layers = model.config.n_layer
         per_layer_deltas: Dict[int, Dict[int, Dict[int, List[Tuple[float, bool]]]]] = {}
-
-        # Also store raw sentence data for final timeline
         sentence_raw: List[Dict] = []
 
-        for sentence in sentences[:3]:
+        for si, sentence in enumerate(sentences):
             tokens_bytes = list(sentence.encode("utf-8"))
-            tokens_tensor = torch.tensor(
-                [tokens_bytes], dtype=torch.long, device=device
-            )
+            tokens_tensor = torch.tensor([tokens_bytes], dtype=torch.long, device=device)
             word_boundaries = _split_sentence_to_words(sentence)
 
             extraction_config = ExtractionConfig(
@@ -530,7 +850,6 @@ def compute_synapse_tracking(
             with torch.no_grad():
                 with model.extraction_mode(extraction_config) as buffer:
                     model(tokens_tensor)
-
                     raw_per_layer: Dict[int, Dict] = {}
 
                     for layer_idx in sorted(buffer.x_sparse.keys()):
@@ -539,7 +858,7 @@ def compute_synapse_tracking(
                         if y_all is None:
                             continue
 
-                        x_sp = x_all[0] if x_all.dim() == 4 else x_all  # (nh, T, N)
+                        x_sp = x_all[0] if x_all.dim() == 4 else x_all
                         y_sp = y_all[0] if y_all.dim() == 4 else y_all
                         T = x_sp.shape[1]
 
@@ -548,20 +867,17 @@ def compute_synapse_tracking(
 
                         layer_xy = {}
                         for h in range(n_heads):
-                            # Diagonal outer product: y[t,n] * x[t,n] for all n
-                            xy = (y_sp[h] * x_sp[h]).cpu().numpy()  # (T, N)
-                            cumsum = np.cumsum(xy, axis=0)  # (T, N)
+                            xy = (y_sp[h] * x_sp[h]).cpu().numpy()
+                            cumsum = np.cumsum(xy, axis=0)
                             layer_xy[h] = cumsum
 
-                            # Compute Δσ per word for top-active neurons only
-                            # (skip neurons with zero activity to save time)
-                            max_act = xy.max(axis=0)  # (N,)
+                            max_act = xy.max(axis=0)
                             active_neurons = np.where(max_act > 1e-6)[0]
 
                             for word, byte_start, byte_end in word_boundaries:
                                 last_byte = min(byte_end - 1, T - 1)
                                 first_byte = max(byte_start - 1, 0)
-                                is_concept = word.lower().strip(".,;:!?'\"") in concept_words
+                                is_concept = _is_concept_word(word, concept_words)
 
                                 for nidx in active_neurons:
                                     curr = cumsum[last_byte, nidx]
@@ -571,7 +887,7 @@ def compute_synapse_tracking(
                                     if nidx not in per_layer_deltas[layer_idx][h]:
                                         per_layer_deltas[layer_idx][h][nidx] = []
                                     per_layer_deltas[layer_idx][h][nidx].append(
-                                        (float(delta), is_concept)
+                                        (float(delta), is_concept, si)
                                     )
 
                         raw_per_layer[layer_idx] = layer_xy
@@ -583,87 +899,112 @@ def compute_synapse_tracking(
                 "raw_per_layer": raw_per_layer,
             })
 
-        # ── Phase B: Find best (layer, head, neuron) with highest concept selectivity ──
+        # ── Phase B: Find concept-selective synapses WITH consistency ──
+        n_sentences = len(sentences)
+
         best_synapses: List[Dict] = []
         for layer_idx, head_data in per_layer_deltas.items():
             for h, neuron_data in head_data.items():
                 for nidx, deltas in neuron_data.items():
-                    concept_deltas = [d for d, ic in deltas if ic]
-                    nonconcept_deltas = [d for d, ic in deltas if not ic]
-
+                    concept_deltas = [d for d, ic, _ in deltas if ic]
+                    nonconcept_deltas = [d for d, ic, _ in deltas if not ic]
                     if not concept_deltas or not nonconcept_deltas:
                         continue
 
                     mean_concept = np.mean(concept_deltas)
                     mean_nonconcept = np.mean(nonconcept_deltas)
 
-                    # Selectivity of Δσ: how much more does σ jump at concept words?
                     denom = abs(mean_concept) + abs(mean_nonconcept) + 1e-10
                     selectivity = mean_concept / denom
 
+                    # Count sentence consistency from tagged indices
+                    fired_sentences = set()
+                    for d_val, _, s_idx in deltas:
+                        if abs(d_val) > 1e-6:
+                            fired_sentences.add(s_idx)
+                    consistency = len(fired_sentences)
+
                     if selectivity > 0.55 and mean_concept > 1e-4:
                         best_synapses.append({
-                            "layer": layer_idx,
-                            "head": h,
-                            "neuron": nidx,
+                            "layer": int(layer_idx),
+                            "head": int(h),
+                            "neuron": int(nidx),
                             "selectivity": float(selectivity),
                             "mean_concept_delta": float(mean_concept),
                             "mean_nonconcept_delta": float(mean_nonconcept),
+                            "consistency": consistency,
                         })
 
-        # Sort by selectivity * magnitude and take top 5
-        best_synapses.sort(
-            key=lambda s: s["selectivity"] * s["mean_concept_delta"],
+        # Rank by: consistency first (must fire in >=3 sentences), then selectivity * delta
+        min_consistency = max(3, n_sentences // 2)
+        consistent = [s for s in best_synapses if s["consistency"] >= min_consistency]
+        if not consistent:
+            # Relax: any that fire in >=2 sentences
+            consistent = [s for s in best_synapses if s["consistency"] >= 2]
+        if not consistent:
+            consistent = best_synapses  # fallback
+
+        consistent.sort(
+            key=lambda s: s["consistency"] * s["selectivity"] * s["mean_concept_delta"],
             reverse=True,
         )
-        top_synapses = best_synapses[:5]
+        top_synapses = consistent[:5]
 
         if not top_synapses:
-            # Fallback: pick neurons with largest overall Δσ at concept words
             all_candidates = []
             for layer_idx, head_data in per_layer_deltas.items():
                 for h, neuron_data in head_data.items():
                     for nidx, deltas in neuron_data.items():
-                        concept_deltas = [d for d, ic in deltas if ic]
+                        concept_deltas = [d for d, ic, _ in deltas if ic]
                         if concept_deltas:
+                            fired = set()
+                            for d_val, _, s_idx in deltas:
+                                if abs(d_val) > 1e-6:
+                                    fired.add(s_idx)
                             all_candidates.append({
-                                "layer": layer_idx,
-                                "head": h,
-                                "neuron": nidx,
+                                "layer": int(layer_idx),
+                                "head": int(h),
+                                "neuron": int(nidx),
                                 "selectivity": 0.5,
                                 "mean_concept_delta": float(np.mean(concept_deltas)),
                                 "mean_nonconcept_delta": 0.0,
+                                "consistency": len(fired),
                             })
-            all_candidates.sort(key=lambda s: s["mean_concept_delta"], reverse=True)
+            all_candidates.sort(key=lambda s: s["consistency"] * s["mean_concept_delta"], reverse=True)
             top_synapses = all_candidates[:5]
 
         tracking_layer = top_synapses[0]["layer"] if top_synapses else best_layer
-        print(f"     {cid}: tracking layer = L{tracking_layer}, "
-              f"top synapse selectivity = {top_synapses[0]['selectivity']:.3f}" if top_synapses else "")
+        if top_synapses:
+            print(f"     {cid}: tracking L{tracking_layer}_H{top_synapses[0]['head']}_N{top_synapses[0]['neuron']}, "
+                  f"sel={top_synapses[0]['selectivity']:.3f}, "
+                  f"consistency={top_synapses[0]['consistency']}/{n_sentences}")
 
         tracked_synapses = [
             {
-                "id": f"σ({s['neuron']},{s['neuron']})",
+                "id": f"\u03c3({s['neuron']},{s['neuron']})",
                 "label": f"L{s['layer']}_H{s['head']}_N{s['neuron']}",
-                "layer": s["layer"],
-                "head": s["head"],
-                "i": s["neuron"],
-                "j": s["neuron"],
+                "layer": int(s["layer"]),
+                "head": int(s["head"]),
+                "i": int(s["neuron"]),
+                "j": int(s["neuron"]),
                 "selectivity": round(s["selectivity"], 3),
             }
             for s in top_synapses
         ]
 
-        # ── Phase C: Build word-level timeline for the discovered synapses ──
+        # ── Phase C: Word-level timeline (sorted by activation strength) ──
         sentence_tracks: List[Dict] = []
-        for sraw in sentence_raw:
+        sentence_activation_scores: List[Tuple[int, float]] = []
+
+        for si, sraw in enumerate(sentence_raw):
             word_timeline: List[Dict] = []
             T = len(sraw["tokens_bytes"])
+            sentence_total_activation = 0.0
 
             for word, byte_start, byte_end in sraw["word_boundaries"]:
                 last_byte = min(byte_end - 1, T - 1)
                 first_byte = max(byte_start - 1, 0)
-                is_concept = word.lower().strip(".,;:!?'\"") in concept_words
+                is_concept = _is_concept_word(word, concept_words)
 
                 sigma_at_word = {}
                 delta_sigma = {}
@@ -682,6 +1023,9 @@ def compute_synapse_tracking(
                     sigma_at_word[syn["id"]] = round(curr, 6)
                     delta_sigma[syn["id"]] = round(curr - prev, 6)
 
+                    if is_concept:
+                        sentence_total_activation += abs(curr - prev)
+
                 word_timeline.append({
                     "word": word,
                     "byte_start": byte_start,
@@ -696,125 +1040,104 @@ def compute_synapse_tracking(
                 "n_bytes": len(sraw["tokens_bytes"]),
                 "words": word_timeline,
             })
+            sentence_activation_scores.append((si, sentence_total_activation))
+
+        # Sort sentences: strongest activation first (best demo first)
+        sentence_activation_scores.sort(key=lambda x: x[1], reverse=True)
+        sorted_tracks = [sentence_tracks[si] for si, _ in sentence_activation_scores]
 
         tracking_data[cid] = {
             "synapses": tracked_synapses,
-            "sentences": sentence_tracks,
+            "sentences": sorted_tracks,
         }
 
     return tracking_data
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════════════════
+
 def main():
     parser = argparse.ArgumentParser(
         description="Pre-compute monosemanticity data for BDH frontend"
     )
-    parser.add_argument(
-        "--model",
-        default=str(ROOT / "checkpoints" / "french" / "french_best.pt"),
-        help="Path to model checkpoint",
-    )
-    parser.add_argument(
-        "--output",
-        default=str(
-            ROOT / "frontend" / "public" / "monosemanticity" / "precomputed.json"
-        ),
-        help="Output JSON path",
-    )
-    parser.add_argument(
-        "--device",
-        default="cuda" if torch.cuda.is_available() else "cpu",
-    )
+    parser.add_argument("--model", default=str(ROOT / "checkpoints" / "french" / "french_best.pt"))
+    parser.add_argument("--output", default=str(ROOT / "frontend" / "public" / "monosemanticity" / "precomputed.json"))
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
     print("=" * 60)
-    print("🧠 BDH Monosemanticity Pre-computation (Enhanced)")
+    print("\U0001f9e0 BDH Monosemanticity Pre-computation V2")
+    print("   Sentence-level extraction \u2022 Position-level selectivity")
     print("=" * 60)
 
-    # Load model
-    print(f"\n📂 Loading model from {args.model}")
+    print(f"\n\U0001f4c2 Loading model from {args.model}")
     model = load_model(args.model, args.device)
     n_layers = model.config.n_layer
     n_heads = model.config.n_head
     n_neurons = model.config.n_neurons
-    print(f"   Config: {n_layers}L × {n_heads}H × {n_neurons}N")
+    print(f"   Config: {n_layers}L \u00d7 {n_heads}H \u00d7 {n_neurons}N")
 
-    # ── Phase 1: Extract fingerprints for every category ──
+    # ── Phase 1: Sentence-level fingerprints ──
     print("\n" + "=" * 60)
-    print("Phase 1: Extracting concept fingerprints")
+    print("Phase 1: Sentence-level concept fingerprints")
     print("=" * 60)
     concepts: Dict[str, Any] = {}
     for cat_id, cat in CATEGORIES.items():
-        print(f"\n   ▶ {cat['name']}: {cat['words']}")
+        sentences = SENTENCE_CORPUS.get(cat_id, [])
+        print(f"\n   \u25b6 {cat['name']}: {cat['words']} ({len(sentences)} sentences)")
         result = extract_fingerprint(
-            model,
-            cat["words"],
-            cat["name"],
-            args.device,
-            n_layers,
-            n_heads,
-            n_neurons,
+            model, cat["words"], sentences, cat["name"],
+            args.device, n_layers, n_heads, n_neurons,
         )
         concepts[cat_id] = result
         for layer_str, matrix in result["similarity"].items():
             n = len(matrix)
-            avg = sum(
-                matrix[i][j] for i in range(n) for j in range(n) if i != j
-            ) / max(n * (n - 1), 1)
+            avg = sum(matrix[i][j] for i in range(n) for j in range(n) if i != j) / max(n * (n - 1), 1)
             print(f"     L{layer_str} avg cosine: {avg:.4f}")
 
-    # ── Phase 2: Find best layer ──
+    # ── Phase 2: Best layer ──
     best_layer = compute_best_layer(concepts, n_layers)
-    print(f"\n🏆 Best layer (highest avg within-concept similarity): L{best_layer}")
+    print(f"\n\U0001f3c6 Best layer: L{best_layer}")
 
-    # ── Phase 3: Cross-concept distinctness ──
+    # ── Phase 3: Cross-concept ──
     print("\n" + "=" * 60)
     print("Phase 3: Cross-concept distinctness")
     print("=" * 60)
     cross_concept = compute_cross_concept(concepts, n_layers, n_heads)
     for cc in cross_concept:
         avg_d = np.mean(cc["distinctness_per_layer"])
-        print(
-            f"   {cc['primary']} vs {cc['secondary']}: avg distinctness = {avg_d:.4f}"
-        )
+        print(f"   {cc['primary']} vs {cc['secondary']}: avg distinctness = {avg_d:.4f}")
 
-    # ── Phase 4: Selectivity scores & Mann-Whitney U ──
+    # ── Phase 4: Position-level selectivity ──
     print("\n" + "=" * 60)
-    print("Phase 4: Neuron selectivity & Mann-Whitney U test")
+    print("Phase 4: Position-level neuron selectivity")
     print("=" * 60)
-    selectivity_data = compute_selectivity(
-        concepts, best_layer, n_heads, n_neurons
-    )
+    selectivity_data = compute_selectivity(model, args.device, best_layer, n_heads, n_neurons)
 
-    # Attach monosemantic_neurons to each concept
     for cid, neurons in selectivity_data["per_concept"].items():
         concepts[cid]["monosemantic_neurons"] = neurons
         sig_count = sum(1 for n in neurons if n["p_value"] < 0.05)
-        print(
-            f"   {cid}: {len(neurons)} selective neurons, "
-            f"{sig_count} significant (p < 0.05)"
-        )
+        print(f"   {cid}: {len(neurons)} selective, {sig_count} significant (p<0.05)")
 
-    print(
-        f"\n   📊 Global: {selectivity_data['total_neurons']} neurons total, "
-        f"{selectivity_data['total_selective']} selective (>0.6), "
-        f"mean = {selectivity_data['mean_selectivity']:.4f}"
-    )
+    print(f"\n   \U0001f4ca Global: {selectivity_data['total_neurons']} neurons, "
+          f"{selectivity_data['total_selective']} selective (>0.6), "
+          f"mean = {selectivity_data['mean_selectivity']:.4f}")
 
-    # ── Phase 5: Synapse tracking timeseries ──
+    # ── Phase 5: Synapse tracking ──
     print("\n" + "=" * 60)
-    print("Phase 5: Synapse tracking timeseries")
+    print("Phase 5: Synapse tracking (\u03c3 word-by-word)")
     print("=" * 60)
     synapse_tracking = compute_synapse_tracking(
-        model, args.device, best_layer, n_heads, n_neurons, concepts
+        model, args.device, best_layer, n_heads, n_neurons, concepts,
     )
     for cid, track in synapse_tracking.items():
         n_syn = len(track["synapses"])
         n_sent = len(track["sentences"])
-        print(f"   {cid}: {n_syn} tracked synapses × {n_sent} sentences")
+        print(f"   {cid}: {n_syn} synapses \u00d7 {n_sent} sentences")
 
     # ── Phase 6: Write JSON ──
-    # Remove raw_x before serialization
     for cid in concepts:
         concepts[cid].pop("raw_x", None)
 
@@ -822,11 +1145,7 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
-        "model_info": {
-            "n_layers": n_layers,
-            "n_heads": n_heads,
-            "n_neurons": n_neurons,
-        },
+        "model_info": {"n_layers": n_layers, "n_heads": n_heads, "n_neurons": n_neurons},
         "best_layer": best_layer,
         "concepts": concepts,
         "cross_concept": cross_concept,
@@ -843,8 +1162,8 @@ def main():
         json.dump(payload, f, separators=(",", ":"))
 
     size_mb = output_path.stat().st_size / 1024 / 1024
-    print(f"\n💾 Wrote {output_path} ({size_mb:.2f} MB)")
-    print("✅ Done! Frontend will load this statically.")
+    print(f"\n\U0001f4be Wrote {output_path} ({size_mb:.2f} MB)")
+    print("\u2705 Done!")
 
 
 if __name__ == "__main__":

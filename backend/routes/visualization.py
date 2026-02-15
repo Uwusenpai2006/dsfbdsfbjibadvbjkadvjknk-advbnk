@@ -33,6 +33,8 @@ class HebbianTrackRequest(BaseModel):
     """Request for Hebbian state tracking."""
     text: str
     model_name: str = Field(default="french")
+    layer: Optional[int] = Field(default=None, description="Specific layer to track, None=all")
+    top_k_synapses: int = Field(default=5, description="Number of top synapses to track")
 
 
 # =============================================================================
@@ -435,7 +437,14 @@ async def generate_playback(request: PlaybackRequest, req: Request):
 
 @router.post("/hebbian-track")
 async def track_hebbian(request: HebbianTrackRequest, req: Request):
-    """Track Hebbian learning dynamics token-by-token."""
+    """
+    Track Hebbian σ dynamics word-by-word through BDH layers.
+    
+    Computes the real Hebbian outer product σ(i,j) = Σ y_sparse[τ,i] · x_sparse[τ,j]
+    accumulated token-by-token, then aggregated to word boundaries.
+    Also provides before/after prediction comparison demonstrating
+    how context shifts the model's output distribution.
+    """
     model_service = req.app.state.model_service
     
     try:
@@ -448,57 +457,216 @@ async def track_hebbian(request: HebbianTrackRequest, req: Request):
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent.parent / "training"))
     from bdh import ExtractionConfig
+    import torch.nn.functional as F
     
-    tokens = torch.tensor(
-        [list(request.text.encode('utf-8'))],
-        dtype=torch.long,
-        device=model_service.device
-    )
-    T = tokens.shape[1]
+    text = request.text.strip()
+    tokens_bytes = list(text.encode("utf-8"))
+    T = len(tokens_bytes)
+    tokens_tensor = torch.tensor([tokens_bytes], dtype=torch.long, device=model_service.device)
     
+    nh = config.n_head
+    N = config.n_neurons
+    n_layers = config.n_layer
+    
+    # ── Helper: split text into words with byte boundaries ──
+    def split_words(text: str):
+        words = []
+        encoded = text.encode("utf-8")
+        i = 0
+        word_start = None
+        current_word = b""
+        for pos, byte in enumerate(encoded):
+            ch = chr(byte) if byte < 128 else None
+            is_space = ch is not None and ch in " \t\n\r"
+            if is_space:
+                if current_word:
+                    words.append((current_word.decode("utf-8", errors="replace"), word_start, pos))
+                    current_word = b""
+                    word_start = None
+            else:
+                if word_start is None:
+                    word_start = pos
+                current_word += bytes([byte])
+        if current_word:
+            words.append((current_word.decode("utf-8", errors="replace"), word_start, len(encoded)))
+        return words
+    
+    word_boundaries = split_words(text)
+    
+    # ── Phase 1: Full forward pass with extraction ──
     extraction_config = ExtractionConfig(
         capture_sparse_activations=True,
-        capture_attention_patterns=True,
+        capture_attention_patterns=False,
     )
     
-    hebbian_updates = []
+    # Per-layer, per-head σ tracking word-by-word
+    layer_word_data = {}  # {layer: {head: [{word, sigma_cumulative, delta_sigma, ...}]}}
     
     with torch.no_grad():
         with model.extraction_mode(extraction_config) as buffer:
-            _, _ = model(tokens)
+            logits, _ = model(tokens_tensor)
             
-            for layer_idx in sorted(buffer.x_sparse.keys()):
-                x = buffer.x_sparse[layer_idx][0]
+            # Get top predictions at final position (after seeing full text)
+            final_logits = logits[0, -1, :]  # (vocab_size,)
+            final_probs = F.softmax(final_logits, dim=-1)
+            top_vals, top_ids = torch.topk(final_probs, 10)
+            after_predictions = []
+            for v, idx in zip(top_vals.tolist(), top_ids.tolist()):
+                try:
+                    ch = chr(idx) if 32 <= idx < 127 else f"0x{idx:02x}"
+                except:
+                    ch = f"0x{idx:02x}"
+                after_predictions.append({"byte": idx, "char": ch, "prob": round(v, 6)})
+            
+            # Process each layer
+            layers_to_process = sorted(buffer.x_sparse.keys())
+            if request.layer is not None:
+                layers_to_process = [l for l in layers_to_process if l == request.layer]
+            
+            for layer_idx in layers_to_process:
+                x_sparse = buffer.x_sparse[layer_idx][0]  # (nh, T, N)
+                y_sparse_data = buffer.y_sparse.get(layer_idx)
+                if y_sparse_data is None:
+                    continue
+                y_sparse = y_sparse_data[0]  # (nh, T, N)
                 
-                for t in range(1, T):
-                    x_prev = x[:, t-1, :]
-                    x_curr = x[:, t, :]
+                head_data = {}
+                for h in range(nh):
+                    # Compute σ(i,j) = y_sparse[t,i] * x_sparse[t,j] token by token
+                    # For visualization we track diagonal σ(i,i) = y_sparse[t,i] * x_sparse[t,i]
+                    # This is the "gate" signal — the Hebbian co-activation
+                    x_h = x_sparse[h].cpu().numpy()  # (T, N) 
+                    y_h = y_sparse[h].cpu().numpy()  # (T, N)
                     
-                    for h in range(config.n_head):
-                        prev_active = (x_prev[h] > 0.1).nonzero().squeeze(-1)
-                        curr_active = (x_curr[h] > 0.1).nonzero().squeeze(-1)
+                    # Token-level gate: element-wise product
+                    gate = x_h * y_h  # (T, N) — this IS the Hebbian signal
+                    
+                    # Cumulative σ along token axis
+                    sigma_cumsum = np.cumsum(gate, axis=0)  # (T, N)
+                    
+                    # Find top synapses: neurons with highest final cumulative σ
+                    final_sigma = sigma_cumsum[-1]  # (N,)
+                    top_k = min(request.top_k_synapses, N)
+                    top_neuron_ids = np.argsort(final_sigma)[::-1][:top_k]
+                    
+                    # Build word-level timeline for tracked synapses
+                    word_timeline = []
+                    for wi, (word, byte_start, byte_end) in enumerate(word_boundaries):
+                        last_byte = min(byte_end - 1, T - 1)
+                        first_byte = max(byte_start - 1, 0) if byte_start > 0 else 0
                         
-                        if prev_active.numel() > 0 and curr_active.numel() > 0:
-                            pairs = []
-                            for n1 in prev_active[:10].tolist():
-                                for n2 in curr_active[:10].tolist():
-                                    strength = x_prev[h, n1].item() * x_curr[h, n2].item()
-                                    if strength > 0.01:
-                                        pairs.append({
-                                            "neuron_from": n1,
-                                            "neuron_to": n2,
-                                            "strength": round(strength, 4),
-                                        })
-                            
-                            if pairs:
-                                hebbian_updates.append({
-                                    "token_idx": t,
-                                    "layer": layer_idx,
-                                    "head": h,
-                                    "pairs": pairs[:20],
-                                })
+                        word_entry = {
+                            "word": word,
+                            "byte_range": [byte_start, byte_end],
+                        }
+                        
+                        # Per-synapse sigma and delta at this word
+                        synapses = {}
+                        for nidx in top_neuron_ids:
+                            nidx_int = int(nidx)
+                            curr = float(sigma_cumsum[last_byte, nidx_int])
+                            prev = float(sigma_cumsum[first_byte, nidx_int]) if byte_start > 0 else 0.0
+                            delta = curr - prev
+                            synapses[f"N{nidx_int}"] = {
+                                "sigma": round(curr, 4),
+                                "delta": round(delta, 4),
+                            }
+                        
+                        # Aggregate gate activity at this word (sum across all neurons)
+                        word_gate_sum = float(gate[max(byte_start, 0):byte_end].sum())
+                        word_entry["synapses"] = synapses
+                        word_entry["gate_activity"] = round(word_gate_sum, 4)
+                        word_timeline.append(word_entry)
+                    
+                    # Tracked synapse metadata
+                    tracked = []
+                    for nidx in top_neuron_ids:
+                        nidx_int = int(nidx)
+                        tracked.append({
+                            "id": f"N{nidx_int}",
+                            "neuron": nidx_int,
+                            "final_sigma": round(float(final_sigma[nidx_int]), 4),
+                        })
+                    
+                    head_data[h] = {
+                        "tracked_synapses": tracked,
+                        "words": word_timeline,
+                    }
+                
+                layer_word_data[layer_idx] = head_data
     
-    return {"input_text": request.text, "num_tokens": T, "updates": hebbian_updates}
+    # ── Phase 2: Before-context predictions ──
+    # Feed just the first few bytes (before the main content)
+    # to show what the model predicts without context
+    prefix_len = min(3, T)  # first 3 bytes as minimal context
+    if prefix_len > 0:
+        prefix_tensor = tokens_tensor[:, :prefix_len]
+        with torch.no_grad():
+            prefix_logits, _ = model(prefix_tensor)
+            prefix_final = prefix_logits[0, -1, :]
+            prefix_probs = F.softmax(prefix_final, dim=-1)
+            top_v, top_i = torch.topk(prefix_probs, 10)
+            before_predictions = []
+            for v, idx in zip(top_v.tolist(), top_i.tolist()):
+                try:
+                    ch = chr(idx) if 32 <= idx < 127 else f"0x{idx:02x}"
+                except:
+                    ch = f"0x{idx:02x}"
+                before_predictions.append({"byte": idx, "char": ch, "prob": round(v, 6)})
+    else:
+        before_predictions = []
+    
+    # ── Phase 3: Layer-by-layer σ summary ──
+    layer_summary = []
+    for layer_idx in sorted(layer_word_data.keys()):
+        head_summaries = []
+        for h in range(nh):
+            if h not in layer_word_data[layer_idx]:
+                continue
+            hdata = layer_word_data[layer_idx][h]
+            top_syn = hdata["tracked_synapses"][0] if hdata["tracked_synapses"] else None
+            total_gate = sum(w["gate_activity"] for w in hdata["words"])
+            head_summaries.append({
+                "head": h,
+                "total_gate_activity": round(total_gate, 4),
+                "top_synapse": top_syn,
+            })
+        layer_summary.append({
+            "layer": layer_idx,
+            "heads": head_summaries,
+        })
+    
+    # ── Phase 4: Sparsity stats ──
+    with torch.no_grad():
+        with model.extraction_mode(extraction_config) as buffer:
+            model(tokens_tensor)
+            sparsity_stats = buffer.get_sparsity_stats()
+    
+    return {
+        "input_text": text,
+        "num_bytes": T,
+        "num_words": len(word_boundaries),
+        "words": [w[0] for w in word_boundaries],
+        "model_config": {
+            "n_layer": n_layers,
+            "n_head": nh,
+            "n_neurons": N,
+        },
+        "predictions": {
+            "before": before_predictions,
+            "after": after_predictions,
+            "prefix_text": text[:prefix_len],
+        },
+        "layer_summary": layer_summary,
+        "layer_data": {
+            int(k): {
+                int(h): v for h, v in heads.items()
+            } for k, heads in layer_word_data.items()
+        },
+        "sparsity": {
+            k: round(v, 4) for k, v in sparsity_stats.items()
+        },
+    }
 
 
 @router.get("/architecture-spec")

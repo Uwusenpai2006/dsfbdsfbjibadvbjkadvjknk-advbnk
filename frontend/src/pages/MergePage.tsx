@@ -1,16 +1,16 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { GitMerge, ArrowRight, Check, Sparkles, Zap } from 'lucide-react'
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { GitMerge, ArrowRight, Check, Sparkles, Zap } from "lucide-react";
 
 export function MergePage() {
-  const [mergeStep, setMergeStep] = useState<0 | 1 | 2 | 3>(0)
+  const [mergeStep, setMergeStep] = useState<0 | 1 | 2 | 3>(0);
 
   const steps = [
-    { title: 'French Specialist', desc: 'En-Fr translation' },
-    { title: 'Portuguese Specialist', desc: 'En-Pt translation' },
-    { title: 'Merge', desc: 'Concatenate' },
-    { title: 'Polyglot', desc: 'Both languages' },
-  ]
+    { title: "French Specialist", desc: "En-Fr translation" },
+    { title: "Portuguese Specialist", desc: "En-Pt translation" },
+    { title: "Merge", desc: "Concatenate" },
+    { title: "Polyglot", desc: "Both languages" },
+  ];
 
   return (
     <div className="min-h-screen p-8">
@@ -23,7 +23,7 @@ export function MergePage() {
           <span className="gradient-text">Model Merging</span> Explorer
         </h1>
         <p className="text-gray-400">
-          Combine separately trained specialists into a unified model — 
+          Combine separately trained specialists into a unified model —
           impossible with transformers, natural with BDH.
         </p>
       </motion.div>
@@ -42,13 +42,15 @@ export function MergePage() {
                 className="flex flex-col items-center"
                 whileHover={{ scale: 1.05 }}
               >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-2 transition-all ${
-                  idx < mergeStep 
-                    ? 'bg-green-500 text-white' 
-                    : idx === mergeStep 
-                    ? 'bg-bdh-accent text-white ring-4 ring-bdh-accent/30' 
-                    : 'bg-gray-800 text-gray-500'
-                }`}>
+                <div
+                  className={`w-14 h-14 rounded-full flex items-center justify-center mb-2 transition-all ${
+                    idx < mergeStep
+                      ? "bg-green-500 text-white"
+                      : idx === mergeStep
+                        ? "bg-bdh-accent text-white ring-4 ring-bdh-accent/30"
+                        : "bg-gray-800 text-gray-500"
+                  }`}
+                >
                   {idx < mergeStep ? (
                     <Check size={24} />
                   ) : idx === 0 ? (
@@ -61,14 +63,18 @@ export function MergePage() {
                     <span className="text-2xl">🌍</span>
                   )}
                 </div>
-                <span className={`text-sm font-medium ${idx <= mergeStep ? 'text-white' : 'text-gray-500'}`}>
+                <span
+                  className={`text-sm font-medium ${idx <= mergeStep ? "text-white" : "text-gray-500"}`}
+                >
                   {step.title}
                 </span>
                 <span className="text-xs text-gray-500">{step.desc}</span>
               </motion.button>
-              
+
               {idx < steps.length - 1 && (
-                <div className={`mx-6 h-0.5 w-16 ${idx < mergeStep ? 'bg-green-500' : 'bg-gray-700'}`} />
+                <div
+                  className={`mx-6 h-0.5 w-16 ${idx < mergeStep ? "bg-green-500" : "bg-gray-700"}`}
+                />
               )}
             </div>
           ))}
@@ -95,7 +101,9 @@ export function MergePage() {
           >
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">🇫🇷</span>
-              <span className="font-semibold text-blue-400">French Specialist</span>
+              <span className="font-semibold text-blue-400">
+                French Specialist
+              </span>
             </div>
             <div className="text-sm text-gray-400 mb-2">Neurons: 0 - 8,191</div>
             <div className="grid grid-cols-8 gap-1">
@@ -103,7 +111,9 @@ export function MergePage() {
                 <div key={i} className="w-3 h-3 rounded-sm bg-blue-500/50" />
               ))}
             </div>
-            <div className="text-xs text-gray-500 mt-2">Trained on Europarl En-Fr</div>
+            <div className="text-xs text-gray-500 mt-2">
+              Trained on Europarl En-Fr
+            </div>
           </motion.div>
 
           {/* Portuguese Model */}
@@ -119,7 +129,9 @@ export function MergePage() {
           >
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">🇵🇹</span>
-              <span className="font-semibold text-green-400">Portuguese Specialist</span>
+              <span className="font-semibold text-green-400">
+                Portuguese Specialist
+              </span>
             </div>
             <div className="text-sm text-gray-400 mb-2">Neurons: 0 - 8,191</div>
             <div className="grid grid-cols-8 gap-1">
@@ -127,7 +139,9 @@ export function MergePage() {
                 <div key={i} className="w-3 h-3 rounded-sm bg-green-500/50" />
               ))}
             </div>
-            <div className="text-xs text-gray-500 mt-2">Trained on Europarl En-Pt</div>
+            <div className="text-xs text-gray-500 mt-2">
+              Trained on Europarl En-Pt
+            </div>
           </motion.div>
 
           {/* Merge Operation */}
@@ -156,16 +170,20 @@ export function MergePage() {
           >
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">🌍</span>
-              <span className="font-semibold text-purple-400">Merged Polyglot</span>
+              <span className="font-semibold text-purple-400">
+                Merged Polyglot
+              </span>
             </div>
-            <div className="text-sm text-gray-400 mb-2">Neurons: 0 - 16,383</div>
+            <div className="text-sm text-gray-400 mb-2">
+              Neurons: 0 - 16,383
+            </div>
             <div className="grid grid-cols-16 gap-0.5">
               {Array.from({ length: 64 }).map((_, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className={`w-2 h-2 rounded-sm ${
-                    i < 32 ? 'bg-blue-500/50' : 'bg-green-500/50'
-                  }`} 
+                    i < 32 ? "bg-blue-500/50" : "bg-green-500/50"
+                  }`}
                 />
               ))}
             </div>
@@ -289,31 +307,38 @@ export function MergePage() {
         </h3>
         <div className="grid md:grid-cols-2 gap-6">
           <div>
-            <h4 className="font-medium text-red-400 mb-2">❌ Transformers Can't Do This</h4>
+            <h4 className="font-medium text-red-400 mb-2">
+              ❌ Transformers Can't Do This
+            </h4>
             <p className="text-gray-400 text-sm">
-              Transformer weights are densely interconnected. You cannot simply concatenate 
-              two transformer models — the result would be meaningless. Any attempt at 
-              "merging" requires careful fine-tuning, distillation, or other complex procedures.
+              Transformer weights are densely interconnected. You cannot simply
+              concatenate two transformer models — the result would be
+              meaningless. Any attempt at "merging" requires careful
+              fine-tuning, distillation, or other complex procedures.
             </p>
           </div>
           <div>
-            <h4 className="font-medium text-green-400 mb-2">✅ BDH Does It Naturally</h4>
+            <h4 className="font-medium text-green-400 mb-2">
+              ✅ BDH Does It Naturally
+            </h4>
             <p className="text-gray-400 text-sm">
-              BDH's sparse, modular architecture means neurons operate independently. 
-              Concatenating two models is as simple as stacking their neuron spaces. 
-              No fine-tuning needed — the merged model immediately works for both domains.
+              BDH's sparse, modular architecture means neurons operate
+              independently. Concatenating two models is as simple as stacking
+              their neuron spaces. No fine-tuning needed — the merged model
+              immediately works for both domains.
             </p>
           </div>
         </div>
         <div className="mt-4 p-4 bg-bdh-accent/10 border border-bdh-accent/30 rounded-lg">
           <p className="text-bdh-accent font-medium">
             <Zap size={16} className="inline mr-2" />
-            Implication: Train specialists for specific tasks, merge them freely. 
-            This enables <span className="text-white">modular AI development</span> — 
-            a paradigm impossible with current transformer architectures.
+            Implication: Train specialists for specific tasks, merge them
+            freely. This enables{" "}
+            <span className="text-white">modular AI development</span> — a
+            paradigm impossible with current transformer architectures.
           </p>
         </div>
       </motion.div>
     </div>
-  )
+  );
 }

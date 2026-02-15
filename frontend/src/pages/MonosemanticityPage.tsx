@@ -998,7 +998,7 @@ function SynapseTrackingView({
   setActiveConcept: (c: string) => void;
 }) {
   const [activeSentence, setActiveSentence] = useState(0);
-  const [showDelta, setShowDelta] = useState(false);
+  const [showDelta, setShowDelta] = useState(true);
   const conceptTrack = tracking[activeConcept];
 
   if (!conceptTrack || conceptTrack.sentences.length === 0) {
