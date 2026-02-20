@@ -1,29 +1,29 @@
 # BDH Training Configuration: Portuguese Specialist
 # Train on English-Portuguese Europarl data
+# ARCHITECTURE MUST MATCH FRENCH EXACTLY FOR MERGING!
 
 # Data paths
 train_data: "data/en-pt/train.bin"
 val_data: "data/en-pt/val.bin"
 
-# Model architecture
-# MUST match French model exactly for merging!
-n_layer: 8
-n_embd: 256
+# Model architecture — MUST match French model!
+n_layer: 6
+n_embd: 192
 n_head: 4
-mlp_multiplier: 128 # N = 256 * 128 / 4 = 8192 neurons per head
+mlp_multiplier: 64 # N = 192 * 64 / 4 = 3072 neurons per head
 dropout: 0.1
 vocab_size: 256 # UTF-8 bytes
 
 # Training hyperparameters
-batch_size: 32
-block_size: 512
-max_iters: 15000
+batch_size: 16
+block_size: 256
+max_iters: 5000
 learning_rate: 1.0e-3
 min_lr: 1.0e-4
-warmup_iters: 1000
+warmup_iters: 500
 weight_decay: 0.1
 grad_clip: 1.0
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 8
 
 # Logging and checkpointing
 log_interval: 100
@@ -38,9 +38,4 @@ run_name: "portuguese_specialist"
 # Device settings
 device: "cuda"
 dtype: "bfloat16"
-compile_model: false # Triton not available on Windows
-
-
-# Optional: Weights & Biases logging
-# wandb_project: "bdh-interpretability"
-# wandb_run_name: "portuguese_specialist"
+compile_model: false

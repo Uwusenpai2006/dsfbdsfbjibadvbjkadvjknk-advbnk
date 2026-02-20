@@ -1,0 +1,85 @@
+{
+  "heritage": {
+    "model1_name": "french",
+    "model2_name": "portuguese",
+    "neurons_per_head_original": 3072,
+    "neurons_per_head_merged": 6144,
+    "total_neurons_per_model": 12288,
+    "total_neurons_merged": 24576,
+    "ranges": {
+      "french": {
+        "start": 0,
+        "end": 3071
+      },
+      "portuguese": {
+        "start": 3072,
+        "end": 6143
+      }
+    }
+  },
+  "models": {
+    "french": {
+      "name": "French",
+      "flag": "\ud83c\uddeb\ud83c\uddf7",
+      "params": 7179264,
+      "n_neurons": 3072,
+      "n_heads": 4,
+      "n_layers": 6,
+      "n_embd": 192
+    },
+    "portuguese": {
+      "name": "Portuguese",
+      "flag": "\ud83c\uddf5\ud83c\uddf9",
+      "params": 7179264,
+      "n_neurons": 3072,
+      "n_heads": 4,
+      "n_layers": 6,
+      "n_embd": 192
+    },
+    "merged": {
+      "name": "Merged Polyglot",
+      "flag": "\ud83c\udf0d",
+      "params": 14260224,
+      "n_neurons": 6144,
+      "n_heads": 4,
+      "n_layers": 6,
+      "n_embd": 192
+    }
+  },
+  "evaluation": {
+    "french": {
+      "french_loss": null,
+      "portuguese_loss": null
+    },
+    "portuguese": {
+      "french_loss": null,
+      "portuguese_loss": null
+    },
+    "merged": {
+      "french_loss": null,
+      "portuguese_loss": null
+    }
+  },
+  "samples": [
+    {
+      "label": "French prompt",
+      "prompt": "Le parlement europ\u00e9en",
+      "generated": "Le parlement europ\u00e9enat rt itiererie  ticns  iai odet tirs trroo etsr  cad oard.t s os sottdet o at i"
+    },
+    {
+      "label": "Portuguese prompt",
+      "prompt": "O parlamento europeu",
+      "generated": "O parlamento europeurni d ads testt usooauo roooofamiEd siess o rr tn tctit cdoise rausmoraird sedoe"
+    },
+    {
+      "label": "English prompt",
+      "prompt": "The European Parliament",
+      "generated": "The European Parliamentl dt rr rrooaon c to tt iioosrno si itn dodoosas onmrnonrnin initt ni\\xc3 deuis. n "
+    },
+    {
+      "label": "Mixed context",
+      "prompt": "Bonjour, como est\u00e1",
+      "generated": "Bonjour, como est\u00e1r  ooo siratssmm rd rermedrdns   toit s ionau sissis rooooooriroe nants seot, s "
+    }
+  ]
+}

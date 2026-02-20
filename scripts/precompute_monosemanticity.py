@@ -750,11 +750,20 @@ def compute_selectivity(
             denom = mean_in + mean_out + 1e-10
             selectivity = mean_in / denom
 
-            active_mask = (mean_in + mean_out) > 1e-8
+            # Filter out near-dead neurons: require meaningful total activation
+            # This prevents noise-driven selectivity=1.0 from near-zero neurons
+            active_mask = (mean_in + mean_out) > 0.01
             active_sel = selectivity[active_mask]
             all_selectivities.extend(active_sel.tolist())
 
-            selective_idx = np.where((selectivity > 0.6) & active_mask)[0]
+            # For the table: also require the in-concept mean to be above
+            # the 10th percentile of non-zero activations (filters dead neurons)
+            nz_in = mean_in[mean_in > 0]
+            min_act = float(np.percentile(nz_in, 10)) if len(nz_in) > 10 else 0.01
+            min_act = max(0.01, min_act)
+            selective_idx = np.where(
+                (selectivity > 0.6) & active_mask & (mean_in > min_act)
+            )[0]
 
             for nidx in selective_idx:
                 sel_score = float(selectivity[nidx])
@@ -810,7 +819,7 @@ def compute_selectivity(
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  PHASE 5: SYNAPSE TRACKING
+#  PHASE 5: SYNAPSE TRACKING — cross-neuron σ(i,j)
 # ══════════════════════════════════════════════════════════════════════
 
 def compute_synapse_tracking(
@@ -822,8 +831,26 @@ def compute_synapse_tracking(
     concepts: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Discover concept-selective synapses and track sigma word-by-word.
+    Discover concept-selective Hebbian synapses σ(i,j) and track them
+    word-by-word through example sentences.
+
+    Following the BDH paper (Section 6.3, Fig 12-13):
+    σ(i,j) = Σ_{τ≤t} y_sparse[τ,i] · x_sparse[τ,j]
+
+    This is the CROSS-NEURON Hebbian outer product — neuron j's input
+    activation (x_sparse) drives neuron i's output activation (y_sparse).
+    The paper shows specific σ(i,j) pairs that selectively strengthen
+    when the model processes concept-related words.
+
+    Discovery algorithm:
+    1. Run sentences, capture x_sparse and y_sparse per layer
+    2. At concept-word positions, find top-K active neurons in both
+       x_sparse (input side) and y_sparse (output side)
+    3. Candidate synapses = cross-product of active y × active x
+    4. Score each candidate by concept-selectivity of its Δσ
+    5. Pick top 5 per concept for visualization
     """
+    TOP_K_DISCOVER = 30  # neurons to consider per side
     tracking_data: Dict[str, Any] = {}
 
     for cid, sentences in TRACKING_SENTENCES.items():
@@ -833,13 +860,14 @@ def compute_synapse_tracking(
                 concept_words = {w.lower() for w in cat["words"]}
                 break
 
-        n_model_layers = model.config.n_layer
-        per_layer_deltas: Dict[int, Dict[int, Dict[int, List[Tuple[float, bool]]]]] = {}
+        # ── Phase A: Run sentences, collect x_sparse and y_sparse ──
         sentence_raw: List[Dict] = []
 
         for si, sentence in enumerate(sentences):
             tokens_bytes = list(sentence.encode("utf-8"))
-            tokens_tensor = torch.tensor([tokens_bytes], dtype=torch.long, device=device)
+            tokens_tensor = torch.tensor(
+                [tokens_bytes], dtype=torch.long, device=device,
+            )
             word_boundaries = _split_sentence_to_words(sentence)
 
             extraction_config = ExtractionConfig(
@@ -850,181 +878,269 @@ def compute_synapse_tracking(
             with torch.no_grad():
                 with model.extraction_mode(extraction_config) as buffer:
                     model(tokens_tensor)
-                    raw_per_layer: Dict[int, Dict] = {}
 
+                    raw_per_layer: Dict[int, Dict] = {}
                     for layer_idx in sorted(buffer.x_sparse.keys()):
                         x_all = buffer.x_sparse[layer_idx]
                         y_all = buffer.y_sparse.get(layer_idx)
                         if y_all is None:
                             continue
 
-                        x_sp = x_all[0] if x_all.dim() == 4 else x_all
-                        y_sp = y_all[0] if y_all.dim() == 4 else y_all
-                        T = x_sp.shape[1]
+                        x_sp = x_all[0] if x_all.dim() == 4 else x_all  # (nh, T, N)
+                        y_sp = y_all[0] if y_all.dim() == 4 else y_all  # (nh, T, N)
 
-                        if layer_idx not in per_layer_deltas:
-                            per_layer_deltas[layer_idx] = {h: {} for h in range(n_heads)}
-
-                        layer_xy = {}
-                        for h in range(n_heads):
-                            xy = (y_sp[h] * x_sp[h]).cpu().numpy()
-                            cumsum = np.cumsum(xy, axis=0)
-                            layer_xy[h] = cumsum
-
-                            max_act = xy.max(axis=0)
-                            active_neurons = np.where(max_act > 1e-6)[0]
-
-                            for word, byte_start, byte_end in word_boundaries:
-                                last_byte = min(byte_end - 1, T - 1)
-                                first_byte = max(byte_start - 1, 0)
-                                is_concept = _is_concept_word(word, concept_words)
-
-                                for nidx in active_neurons:
-                                    curr = cumsum[last_byte, nidx]
-                                    prev = cumsum[first_byte, nidx] if byte_start > 0 else 0.0
-                                    delta = curr - prev
-
-                                    if nidx not in per_layer_deltas[layer_idx][h]:
-                                        per_layer_deltas[layer_idx][h][nidx] = []
-                                    per_layer_deltas[layer_idx][h][nidx].append(
-                                        (float(delta), is_concept, si)
-                                    )
-
-                        raw_per_layer[layer_idx] = layer_xy
+                        raw_per_layer[layer_idx] = {
+                            h: {
+                                "x": x_sp[h].cpu().numpy(),  # (T, N)
+                                "y": y_sp[h].cpu().numpy(),   # (T, N)
+                            }
+                            for h in range(n_heads)
+                        }
 
             sentence_raw.append({
                 "sentence": sentence,
                 "tokens_bytes": tokens_bytes,
                 "word_boundaries": word_boundaries,
                 "raw_per_layer": raw_per_layer,
+                "si": si,
             })
 
-        # ── Phase B: Find concept-selective synapses WITH consistency ──
         n_sentences = len(sentences)
 
-        best_synapses: List[Dict] = []
-        for layer_idx, head_data in per_layer_deltas.items():
-            for h, neuron_data in head_data.items():
-                for nidx, deltas in neuron_data.items():
-                    concept_deltas = [d for d, ic, _ in deltas if ic]
-                    nonconcept_deltas = [d for d, ic, _ in deltas if not ic]
-                    if not concept_deltas or not nonconcept_deltas:
+        # ── Phase B: Discover concept-selective cross-neuron pairs ──
+        # For each layer & head, find (y_neuron, x_neuron) pairs
+        # that have high Δσ at concept words and low Δσ at non-concept words
+
+        candidate_scores: List[Dict] = []
+
+        for layer_idx in range(model.config.n_layer):
+            for h in range(n_heads):
+                # Collect which neurons fire at concept vs non-concept positions
+                concept_y_accum = np.zeros(n_neurons)
+                concept_x_accum = np.zeros(n_neurons)
+                concept_count = 0
+                nonconcept_y_accum = np.zeros(n_neurons)
+                nonconcept_x_accum = np.zeros(n_neurons)
+                nonconcept_count = 0
+
+                for sraw in sentence_raw:
+                    layer_data = sraw["raw_per_layer"].get(layer_idx, {}).get(h)
+                    if layer_data is None:
                         continue
+                    x_np = layer_data["x"]  # (T, N)
+                    y_np = layer_data["y"]  # (T, N)
+                    T = x_np.shape[0]
 
-                    mean_concept = np.mean(concept_deltas)
-                    mean_nonconcept = np.mean(nonconcept_deltas)
+                    for word, byte_start, byte_end in sraw["word_boundaries"]:
+                        last_byte = min(byte_end - 1, T - 1)
+                        is_concept = _is_concept_word(word, concept_words)
 
-                    denom = abs(mean_concept) + abs(mean_nonconcept) + 1e-10
-                    selectivity = mean_concept / denom
+                        if is_concept:
+                            concept_x_accum += x_np[last_byte]
+                            concept_y_accum += y_np[last_byte]
+                            concept_count += 1
+                        else:
+                            nonconcept_x_accum += x_np[last_byte]
+                            nonconcept_y_accum += y_np[last_byte]
+                            nonconcept_count += 1
 
-                    # Count sentence consistency from tagged indices
-                    fired_sentences = set()
-                    for d_val, _, s_idx in deltas:
-                        if abs(d_val) > 1e-6:
-                            fired_sentences.add(s_idx)
-                    consistency = len(fired_sentences)
+                if concept_count == 0 or nonconcept_count == 0:
+                    continue
 
-                    if selectivity > 0.55 and mean_concept > 1e-4:
-                        best_synapses.append({
-                            "layer": int(layer_idx),
-                            "head": int(h),
-                            "neuron": int(nidx),
-                            "selectivity": float(selectivity),
-                            "mean_concept_delta": float(mean_concept),
-                            "mean_nonconcept_delta": float(mean_nonconcept),
-                            "consistency": consistency,
-                        })
+                # Mean activations at concept vs non-concept positions
+                mean_cx = concept_x_accum / concept_count
+                mean_cy = concept_y_accum / concept_count
+                mean_nx = nonconcept_x_accum / nonconcept_count
+                mean_ny = nonconcept_y_accum / nonconcept_count
 
-        # Rank by: consistency first (must fire in >=3 sentences), then selectivity * delta
-        min_consistency = max(3, n_sentences // 2)
-        consistent = [s for s in best_synapses if s["consistency"] >= min_consistency]
+                # Top-K neurons that are preferentially active at concept words
+                # Score: concept_mean - nonconcept_mean (contrast)
+                x_contrast = mean_cx - mean_nx
+                y_contrast = mean_cy - mean_ny
+
+                # Also require minimum absolute activation at concept positions
+                x_mask = mean_cx > 0.01
+                y_mask = mean_cy > 0.01
+
+                x_scores = np.where(x_mask, x_contrast, -1e9)
+                y_scores = np.where(y_mask, y_contrast, -1e9)
+
+                top_x_idx = np.argsort(x_scores)[-TOP_K_DISCOVER:][::-1]
+                top_y_idx = np.argsort(y_scores)[-TOP_K_DISCOVER:][::-1]
+
+                # Filter to those with positive contrast
+                top_x_idx = [i for i in top_x_idx if x_scores[i] > 0]
+                top_y_idx = [i for i in top_y_idx if y_scores[i] > 0]
+
+                if not top_x_idx or not top_y_idx:
+                    continue
+
+                # Score candidate (y_i, x_j) pairs by Δσ selectivity
+                # For efficiency, limit to top 15 × top 15 = 225 candidates
+                for y_idx in top_y_idx[:15]:
+                    for x_idx in top_x_idx[:15]:
+                        # Compute Δσ(y_idx, x_idx) at each word position
+                        concept_deltas = []
+                        nonconcept_deltas = []
+                        fired_sentences = set()
+
+                        for sraw in sentence_raw:
+                            ld = sraw["raw_per_layer"].get(layer_idx, {}).get(h)
+                            if ld is None:
+                                continue
+                            x_np = ld["x"]
+                            y_np = ld["y"]
+                            T = x_np.shape[0]
+
+                            for word, bs, be in sraw["word_boundaries"]:
+                                lb = min(be - 1, T - 1)
+                                fb = max(bs - 1, 0)
+                                is_c = _is_concept_word(word, concept_words)
+
+                                # Δσ at this word = sum of y[t,i]*x[t,j] over word bytes
+                                delta = 0.0
+                                for t in range(max(bs, 0), min(be, T)):
+                                    delta += float(y_np[t, y_idx] * x_np[t, x_idx])
+
+                                if is_c:
+                                    concept_deltas.append(delta)
+                                    if abs(delta) > 1e-6:
+                                        fired_sentences.add(sraw["si"])
+                                else:
+                                    nonconcept_deltas.append(delta)
+
+                        if not concept_deltas or not nonconcept_deltas:
+                            continue
+
+                        mc = np.mean(concept_deltas)
+                        mn = np.mean(nonconcept_deltas)
+                        denom = abs(mc) + abs(mn) + 1e-10
+                        sel = mc / denom
+
+                        if sel > 0.52 and mc > 1e-5:
+                            candidate_scores.append({
+                                "layer": int(layer_idx),
+                                "head": int(h),
+                                "y_neuron": int(y_idx),
+                                "x_neuron": int(x_idx),
+                                "selectivity": float(sel),
+                                "mean_concept_delta": float(mc),
+                                "mean_nonconcept_delta": float(mn),
+                                "consistency": len(fired_sentences),
+                            })
+
+        # Rank candidates: consistency × selectivity × delta magnitude
+        min_consistency = max(2, n_sentences // 2)
+        consistent = [c for c in candidate_scores if c["consistency"] >= min_consistency]
         if not consistent:
-            # Relax: any that fire in >=2 sentences
-            consistent = [s for s in best_synapses if s["consistency"] >= 2]
+            consistent = [c for c in candidate_scores if c["consistency"] >= 1]
         if not consistent:
-            consistent = best_synapses  # fallback
+            consistent = candidate_scores
 
         consistent.sort(
-            key=lambda s: s["consistency"] * s["selectivity"] * s["mean_concept_delta"],
+            key=lambda c: c["consistency"] * c["selectivity"] * abs(c["mean_concept_delta"]),
             reverse=True,
         )
         top_synapses = consistent[:5]
 
+        # Fallback: if no good cross-neuron pairs, use diagonal (gate) entries
         if not top_synapses:
-            all_candidates = []
-            for layer_idx, head_data in per_layer_deltas.items():
-                for h, neuron_data in head_data.items():
-                    for nidx, deltas in neuron_data.items():
-                        concept_deltas = [d for d, ic, _ in deltas if ic]
-                        if concept_deltas:
-                            fired = set()
-                            for d_val, _, s_idx in deltas:
-                                if abs(d_val) > 1e-6:
-                                    fired.add(s_idx)
-                            all_candidates.append({
-                                "layer": int(layer_idx),
-                                "head": int(h),
-                                "neuron": int(nidx),
-                                "selectivity": 0.5,
-                                "mean_concept_delta": float(np.mean(concept_deltas)),
-                                "mean_nonconcept_delta": 0.0,
-                                "consistency": len(fired),
-                            })
-            all_candidates.sort(key=lambda s: s["consistency"] * s["mean_concept_delta"], reverse=True)
-            top_synapses = all_candidates[:5]
+            print(f"     {cid}: no cross-neuron pairs found, falling back to diagonal σ(i,i)")
+            for sraw in sentence_raw[:1]:
+                for layer_idx in range(model.config.n_layer):
+                    ld = sraw["raw_per_layer"].get(layer_idx, {})
+                    for h_idx in range(n_heads):
+                        hd = ld.get(h_idx)
+                        if hd is None:
+                            continue
+                        x_np = hd["x"]
+                        y_np = hd["y"]
+                        diag = (x_np * y_np).sum(axis=0)  # (N,)
+                        top_diag = np.argsort(diag)[-5:][::-1]
+                        for nidx in top_diag:
+                            if diag[nidx] > 1e-4:
+                                top_synapses.append({
+                                    "layer": int(layer_idx),
+                                    "head": int(h_idx),
+                                    "y_neuron": int(nidx),
+                                    "x_neuron": int(nidx),
+                                    "selectivity": 0.5,
+                                    "mean_concept_delta": float(diag[nidx]),
+                                    "mean_nonconcept_delta": 0.0,
+                                    "consistency": 1,
+                                })
+                        if len(top_synapses) >= 5:
+                            break
+                    if len(top_synapses) >= 5:
+                        break
+            top_synapses = top_synapses[:5]
 
-        tracking_layer = top_synapses[0]["layer"] if top_synapses else best_layer
         if top_synapses:
-            print(f"     {cid}: tracking L{tracking_layer}_H{top_synapses[0]['head']}_N{top_synapses[0]['neuron']}, "
-                  f"sel={top_synapses[0]['selectivity']:.3f}, "
-                  f"consistency={top_synapses[0]['consistency']}/{n_sentences}")
+            s0 = top_synapses[0]
+            is_cross = s0["y_neuron"] != s0["x_neuron"]
+            print(f"     {cid}: best σ({s0['y_neuron']},{s0['x_neuron']}) "
+                  f"L{s0['layer']}_H{s0['head']} "
+                  f"sel={s0['selectivity']:.3f} "
+                  f"{'cross' if is_cross else 'diag'} "
+                  f"cons={s0['consistency']}/{n_sentences}")
 
+        # Build TrackedSynapse objects
         tracked_synapses = [
             {
-                "id": f"\u03c3({s['neuron']},{s['neuron']})",
-                "label": f"L{s['layer']}_H{s['head']}_N{s['neuron']}",
+                "id": f"σ({s['y_neuron']},{s['x_neuron']})",
+                "label": f"L{s['layer']}_H{s['head']}_y{s['y_neuron']}_x{s['x_neuron']}",
                 "layer": int(s["layer"]),
                 "head": int(s["head"]),
-                "i": int(s["neuron"]),
-                "j": int(s["neuron"]),
+                "i": int(s["y_neuron"]),
+                "j": int(s["x_neuron"]),
                 "selectivity": round(s["selectivity"], 3),
             }
             for s in top_synapses
         ]
 
-        # ── Phase C: Word-level timeline (sorted by activation strength) ──
+        # ── Phase C: Word-level σ timeline for tracked synapses ──
         sentence_tracks: List[Dict] = []
         sentence_activation_scores: List[Tuple[int, float]] = []
 
         for si, sraw in enumerate(sentence_raw):
             word_timeline: List[Dict] = []
             T = len(sraw["tokens_bytes"])
-            sentence_total_activation = 0.0
+
+            # For each tracked synapse, compute cumulative σ(i,j) word by word
+            # σ_t(i,j) = Σ_{τ=0}^{t} y[τ,i] · x[τ,j]
+            cumulative_sigma: Dict[str, float] = {syn["id"]: 0.0 for syn in tracked_synapses}
+            total_activation = 0.0
 
             for word, byte_start, byte_end in sraw["word_boundaries"]:
-                last_byte = min(byte_end - 1, T - 1)
-                first_byte = max(byte_start - 1, 0)
                 is_concept = _is_concept_word(word, concept_words)
 
-                sigma_at_word = {}
-                delta_sigma = {}
+                sigma_at_word: Dict[str, float] = {}
+                delta_sigma: Dict[str, float] = {}
+
                 for syn in tracked_synapses:
-                    layer_data = sraw["raw_per_layer"].get(syn["layer"], {})
-                    cumsum = layer_data.get(syn["head"])
-                    if cumsum is None:
+                    layer_data = sraw["raw_per_layer"].get(syn["layer"], {}).get(syn["head"])
+                    if layer_data is None:
                         sigma_at_word[syn["id"]] = 0.0
                         delta_sigma[syn["id"]] = 0.0
                         continue
 
-                    nidx = syn["i"]
-                    curr = float(cumsum[last_byte, nidx]) if last_byte < cumsum.shape[0] else 0.0
-                    prev = float(cumsum[first_byte, nidx]) if byte_start > 0 and first_byte < cumsum.shape[0] else 0.0
+                    x_np = layer_data["x"]  # (T_actual, N)
+                    y_np = layer_data["y"]  # (T_actual, N)
+                    T_actual = x_np.shape[0]
+                    y_idx = syn["i"]
+                    x_idx = syn["j"]
 
-                    sigma_at_word[syn["id"]] = round(curr, 6)
-                    delta_sigma[syn["id"]] = round(curr - prev, 6)
+                    # Δσ = sum of y[t,i]*x[t,j] over the bytes of this word
+                    ds = 0.0
+                    for t in range(max(byte_start, 0), min(byte_end, T_actual)):
+                        ds += float(y_np[t, y_idx] * x_np[t, x_idx])
+
+                    cumulative_sigma[syn["id"]] += ds
+                    sigma_at_word[syn["id"]] = round(cumulative_sigma[syn["id"]], 6)
+                    delta_sigma[syn["id"]] = round(ds, 6)
 
                     if is_concept:
-                        sentence_total_activation += abs(curr - prev)
+                        total_activation += abs(ds)
 
                 word_timeline.append({
                     "word": word,
@@ -1040,11 +1156,11 @@ def compute_synapse_tracking(
                 "n_bytes": len(sraw["tokens_bytes"]),
                 "words": word_timeline,
             })
-            sentence_activation_scores.append((si, sentence_total_activation))
+            sentence_activation_scores.append((si, total_activation))
 
-        # Sort sentences: strongest activation first (best demo first)
+        # Sort sentences by total concept activation (best evidence first)
         sentence_activation_scores.sort(key=lambda x: x[1], reverse=True)
-        sorted_tracks = [sentence_tracks[si] for si, _ in sentence_activation_scores]
+        sorted_tracks = [sentence_tracks[idx] for idx, _ in sentence_activation_scores]
 
         tracking_data[cid] = {
             "synapses": tracked_synapses,
