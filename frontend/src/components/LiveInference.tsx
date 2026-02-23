@@ -22,7 +22,7 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
 
   const checkServerStatus = async () => {
     try {
-      const response = await fetch("/api/health", {
+      const response = await fetch("/health", {
         method: "GET",
         signal: AbortSignal.timeout(3000),
       });

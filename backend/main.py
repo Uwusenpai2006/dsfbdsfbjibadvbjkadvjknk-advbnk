@@ -14,6 +14,12 @@ The frontend can work in two modes:
 """
 
 import os
+
+# Fix OpenBLAS memory allocation errors on Windows
+# Must be set BEFORE importing numpy/torch
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from contextlib import asynccontextmanager
@@ -24,7 +30,11 @@ from pydantic import BaseModel, Field
 import torch
 
 # Import routes
-from backend.routes import inference, analysis, models, visualization,graph as graph_routes
+from backend.routes import inference, analysis, models, visualization, graph as graph_routes
+try:
+    from backend.routes import merge_api as merge_routes
+except ImportError:
+    merge_routes = None
 # =============================================================================
 # CONFIGURATION
 # =============================================================================

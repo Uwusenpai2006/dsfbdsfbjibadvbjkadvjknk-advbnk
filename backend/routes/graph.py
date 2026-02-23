@@ -8,13 +8,18 @@ Endpoints for neuron cluster visualization:
 """
 
 import json
+import sys
 import time
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 import torch
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "training"))
+from bdh import ExtractionConfig
 
 router = APIRouter()
 
@@ -50,6 +55,7 @@ class ClusterActivateRequest(BaseModel):
     model_name: str = Field(default="french")
     head: int = Field(default=0, description="Internal head index 0-3")
     layer: int = Field(default=-1, description="Which layer. -1 = average all.")
+    beta: float = Field(default=0.1, description="Threshold beta for cluster matching")
 
 
 # =============================================================================
@@ -75,8 +81,17 @@ def compute_clusters(model, config, head: int, beta: float, max_display_nodes: i
     D = config.n_embd
 
     with torch.no_grad():
-        decoder_reshaped = model.decoder.view(nh, N, D)
-        G_star = (decoder_reshaped[head] @ model.encoder[head]).cpu().numpy()
+        # V2 (per_layer_encoders=True) uses encoders/decoders ParameterLists;
+        # V1 uses single encoder/decoder parameters.
+        if config.per_layer_encoders:
+            encoder = model.encoders[0]   # use layer-0 encoder
+            decoder = model.decoders[0]   # use layer-0 decoder
+        else:
+            encoder = model.encoder
+            decoder = model.decoder
+
+        decoder_reshaped = decoder.view(nh, N, D)
+        G_star = (decoder_reshaped[head] @ encoder[head]).cpu().numpy()
 
     t1 = time.perf_counter()
 
@@ -295,27 +310,20 @@ async def activate_clusters(request: ClusterActivateRequest, req: Request):
     head = request.head
     layer = request.layer
 
-    # Find cached cluster labels
-    cluster_data = None
-    for beta_try in [0.1, 0.05, 0.15, 0.2, 0.08]:
-        ck = _cache_key(request.model_name, head, beta_try)
-        if ck in _cluster_cache:
-            cluster_data = _cluster_cache[ck]
-            break
-    if cluster_data is None:
-        cluster_data = compute_clusters(model, config, head, 0.1, max_display_nodes=400)
+    # Find cached cluster labels — use the beta from the request
+    beta = request.beta
+    ck = _cache_key(request.model_name, head, beta)
+    if ck in _cluster_cache:
+        cluster_data = _cluster_cache[ck]
+    else:
+        cluster_data = compute_clusters(model, config, head, beta, max_display_nodes=400)
         cluster_data["model_name"] = request.model_name
-        _cluster_cache[_cache_key(request.model_name, head, 0.1)] = cluster_data
+        _cluster_cache[ck] = cluster_data
 
     cluster_labels = cluster_data["_cluster_labels"]
     num_clusters = cluster_data["num_clusters"]
 
     # Run inference
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent / "training"))
-    from bdh import ExtractionConfig
-
     tokens = torch.tensor(
         [list(request.text.encode("utf-8"))],
         dtype=torch.long,

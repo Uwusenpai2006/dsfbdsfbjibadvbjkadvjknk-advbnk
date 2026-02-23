@@ -167,8 +167,8 @@ export async function loadPlaybackJSON(filename: string) {
   return response.json();
 }
 
-// Health check
-export const health = () => api.get("/health");
+// Health check (hits root /health, NOT /api/health)
+export const health = () => axios.get("/health", { timeout: 4000 });
 
  // Graph Brain endpoints
 export const graph = {
