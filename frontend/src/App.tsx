@@ -1,12 +1,14 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { Layout } from './components/Layout'
-import { HomePage } from './pages/HomePage'
-import { ArchitecturePage } from './pages/ArchitecturePage'
-import { SparsityPage } from './pages/SparsityPage'
-import { GraphPage } from './pages/GraphPage'
-import { MonosemanticityPage } from './pages/MonosemanticityPage'
-import { HebbianPage } from './pages/HebbianPage'
-import { MergePage } from './pages/MergePage'
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Layout } from "./components/Layout";
+import { HomePage } from "./pages/HomePage";
+import { ArchitecturePage } from "./pages/ArchitecturePage";
+import { SparsityPage } from "./pages/SparsityPage";
+import { GraphPage } from "./pages/GraphPage";
+import { MonosemanticityPage } from "./pages/MonosemanticityPage";
+import { HebbianPage } from "./pages/HebbianPage";
+import { MergePage } from "./pages/MergePage";
+import { FindingsPage } from "./pages/FindingsPage";
+import { LearnBDHPage } from "./pages/LearnBDHPage";
 
 function App() {
   return (
@@ -20,10 +22,12 @@ function App() {
           <Route path="monosemanticity" element={<MonosemanticityPage />} />
           <Route path="hebbian" element={<HebbianPage />} />
           <Route path="merge" element={<MergePage />} />
+          <Route path="findings" element={<FindingsPage />} />
+          <Route path="learn" element={<LearnBDHPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
-  )
+  );
 }
 
-export default App
+export default App;

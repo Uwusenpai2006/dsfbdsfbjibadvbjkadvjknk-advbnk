@@ -232,7 +232,7 @@ export function BDHArchitectureDiagram({
       {/* ===== LEFT SIDEBAR ===== */}
       <div className="w-48 flex-shrink-0">
         <div className="glass-card p-3 sticky top-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">
+          <h3 className="text-sm font-semibold text-[#CBD5E0] mb-3">
             Architecture Flow
           </h3>
           <div className="space-y-1">
@@ -242,30 +242,30 @@ export function BDHArchitectureDiagram({
                 onClick={() =>
                   onStepChange ? onStepChange(idx) : setInternalStep(idx)
                 }
-                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-all ${
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-all ${
                   idx < currentStep
-                    ? "bg-purple-600/30 text-purple-300"
+                    ? "bg-[#2A7FFF]/20 text-[#2A7FFF]"
                     : idx === currentStep
-                      ? "bg-purple-600 text-white font-semibold"
-                      : "bg-gray-800/50 text-gray-500 hover:bg-gray-700/50"
+                      ? "bg-[#2A7FFF] text-white font-semibold"
+                      : "bg-white/[0.03] text-[#4A5568] hover:bg-white/[0.08]"
                 }`}
               >
                 <div
-                  className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
+                  className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold ${
                     idx < currentStep
-                      ? "bg-purple-500 text-white"
+                      ? "bg-[#2A7FFF] text-white"
                       : idx === currentStep
-                        ? "bg-white text-purple-600"
-                        : "bg-gray-700 text-gray-400"
+                        ? "bg-white text-[#2A7FFF]"
+                        : "bg-white/10 text-[#8B95A5]"
                   }`}
                 >
                   {idx}
                 </div>
                 <span className="truncate">{step.name}</span>
                 {idx === currentStep && isAnimating && (
-                  <div className="ml-auto w-8 h-1 bg-gray-700 rounded overflow-hidden">
+                  <div className="ml-auto w-8 h-1 bg-white/10 rounded overflow-hidden">
                     <div
-                      className="h-full bg-purple-400 transition-all"
+                      className="h-full bg-[#2A7FFF] transition-all"
                       style={{ width: `${fillProgress * 100}%` }}
                     />
                   </div>
@@ -273,9 +273,9 @@ export function BDHArchitectureDiagram({
               </button>
             ))}
           </div>
-          <div className="mt-4 pt-3 border-t border-gray-700">
-            <div className="text-xs text-gray-400 mb-1">Layer</div>
-            <div className="text-lg font-bold text-purple-400">
+          <div className="mt-4 pt-3 border-t border-white/10">
+            <div className="text-sm text-[#8B95A5] mb-1">Layer</div>
+            <div className="text-lg font-bold text-[#2A7FFF]">
               {currentLayer + 1} / {playbackData?.num_layers ?? 6}
             </div>
           </div>
@@ -375,7 +375,7 @@ export function BDHArchitectureDiagram({
               y="48"
               textAnchor="middle"
               fill="#9CA3AF"
-              fontSize="13"
+              fontSize="15"
             >
               Token: "<tspan fill="#F59E0B">{frameData.token_char}</tspan>"
               (byte {frameData.token_byte}, position {frameData.token_idx})
@@ -399,7 +399,7 @@ export function BDHArchitectureDiagram({
                     x="25"
                     y="36"
                     fill="#C4B5FD"
-                    fontSize="12"
+                    fontSize="14"
                     fontFamily="monospace"
                   >
                     byte {frameData.embedding.byte_value} → v* ∈ ℝ{config.d}
@@ -423,7 +423,7 @@ export function BDHArchitectureDiagram({
                       rx="2"
                     />
                   )}
-                  <text x="25" y="86" fill="#6B7280" fontSize="9">
+                  <text x="25" y="86" fill="#6B7280" fontSize="11">
                     ← negative (blue)
                   </text>
                   <text
@@ -431,7 +431,7 @@ export function BDHArchitectureDiagram({
                     y="86"
                     textAnchor="end"
                     fill="#6B7280"
-                    fontSize="9"
+                    fontSize="11"
                   >
                     positive (red) →
                   </text>
@@ -439,7 +439,7 @@ export function BDHArchitectureDiagram({
                     x="25"
                     y="102"
                     fill="#9CA3AF"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                     opacity={Math.min(1, getProgress(1) * 2)}
                   >
@@ -454,7 +454,7 @@ export function BDHArchitectureDiagram({
                   y="65"
                   textAnchor="middle"
                   fill="#9CA3AF"
-                  fontSize="12"
+                  fontSize="14"
                 >
                   w_t → v* ∈ ℝ^{config.d}
                 </text>
@@ -484,7 +484,7 @@ export function BDHArchitectureDiagram({
                     x="18"
                     y="30"
                     fill="#9CA3AF"
-                    fontSize="8"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     Raw
@@ -502,7 +502,7 @@ export function BDHArchitectureDiagram({
                     x="200"
                     y="30"
                     fill="#FCD34D"
-                    fontSize="8"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     LN'd
@@ -521,7 +521,7 @@ export function BDHArchitectureDiagram({
                     y="48"
                     textAnchor="middle"
                     fill="#6B7280"
-                    fontSize="8"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     ‖v‖ {frameData.embedding.pre_ln_norm?.toFixed(1)} →{" "}
@@ -536,7 +536,7 @@ export function BDHArchitectureDiagram({
                   y="38"
                   textAnchor="middle"
                   fill="#FCD34D"
-                  fontSize="11"
+                  fontSize="13"
                   fontFamily="monospace"
                 >
                   v* = (v* − μ) / σ
@@ -604,7 +604,7 @@ export function BDHArchitectureDiagram({
             x={LX + LW / 2 + 30}
             y="305"
             fill={isActive(2) ? "#9CA3AF" : "#374151"}
-            fontSize="10"
+            fontSize="12"
             opacity={isActive(2) ? 1 : 0.3}
           >
             to x-path
@@ -613,7 +613,7 @@ export function BDHArchitectureDiagram({
             x={RX + RW / 2 - 80}
             y="305"
             fill={isActive(5) ? "#67E8F9" : "#374151"}
-            fontSize="10"
+            fontSize="12"
             opacity={isActive(5) ? 1 : 0.3}
           >
             to attention (v*)
@@ -642,7 +642,7 @@ export function BDHArchitectureDiagram({
                     y="34"
                     textAnchor="middle"
                     fill="#FCD34D"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     x = v* @ E ({config.d}→{config.n})
@@ -659,7 +659,7 @@ export function BDHArchitectureDiagram({
                     x="20"
                     y="98"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     range [{frameData.x_pre_relu.min.toFixed(1)},{" "}
@@ -669,7 +669,7 @@ export function BDHArchitectureDiagram({
                     x="20"
                     y="112"
                     fill="#F59E0B"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     {frameData.x_pre_relu.positive_count}/
@@ -688,7 +688,7 @@ export function BDHArchitectureDiagram({
                   y="65"
                   textAnchor="middle"
                   fill="#FCD34D"
-                  fontSize="11"
+                  fontSize="13"
                   fontFamily="monospace"
                 >
                   x = v* @ E ({config.d}→{config.n})
@@ -723,7 +723,7 @@ export function BDHArchitectureDiagram({
                     y="32"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     x_sparse = max(0, x)
@@ -761,7 +761,7 @@ export function BDHArchitectureDiagram({
                     y="118"
                     textAnchor="middle"
                     fill="#FFF"
-                    fontSize="11"
+                    fontSize="13"
                     fontWeight="bold"
                   >
                     {(frameData.x_sparsity * 100).toFixed(1)}% sparse
@@ -771,7 +771,7 @@ export function BDHArchitectureDiagram({
                     y="132"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                   >
                     {frameData.x_active_count ??
                       Math.round(
@@ -785,7 +785,7 @@ export function BDHArchitectureDiagram({
                         x="18"
                         y="146"
                         fill="#F87171"
-                        fontSize="8"
+                        fontSize="11"
                         fontFamily="monospace"
                       >
                         strongest: [H{frameData.x_top_neurons[0]?.head},
@@ -801,7 +801,7 @@ export function BDHArchitectureDiagram({
                     y="55"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="11"
+                    fontSize="13"
                   >
                     Sparsity: {(frameData.x_sparsity * 100).toFixed(1)}%
                   </text>
@@ -810,7 +810,7 @@ export function BDHArchitectureDiagram({
                     y="75"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="10"
+                    fontSize="12"
                   >
                     {frameData.x_active_count ?? "?"} / {config.total} active
                   </text>
@@ -821,7 +821,7 @@ export function BDHArchitectureDiagram({
                   y="70"
                   textAnchor="middle"
                   fill="#FCA5A5"
-                  fontSize="11"
+                  fontSize="13"
                 >
                   x_sparse = ReLU(x) → ~95% zeros
                 </text>
@@ -833,7 +833,7 @@ export function BDHArchitectureDiagram({
               y="178"
               textAnchor="middle"
               fill={isActive(4) ? "#C4B5FD" : "#374151"}
-              fontSize="13"
+              fontSize="15"
               fontWeight="bold"
               opacity={isActive(4) ? 1 : 0.3}
             >
@@ -875,7 +875,7 @@ export function BDHArchitectureDiagram({
             y="682"
             textAnchor="middle"
             fill={isActive(5) ? "#9CA3AF" : "#374151"}
-            fontSize="10"
+            fontSize="12"
             opacity={isActive(5) ? 1 : 0.2}
           >
             x
@@ -932,7 +932,7 @@ export function BDHArchitectureDiagram({
                 y="30"
                 textAnchor="middle"
                 fill="#67E8F9"
-                fontSize="10"
+                fontSize="12"
                 fontFamily="monospace"
               >
                 ρ = x
@@ -969,7 +969,7 @@ export function BDHArchitectureDiagram({
                   y="130"
                   textAnchor="middle"
                   fill="#67E8F9"
-                  fontSize="10"
+                  fontSize="12"
                 >
                   Attention score matrix accumulates
                 </text>
@@ -977,13 +977,13 @@ export function BDHArchitectureDiagram({
               {isActive(5) && rhoMatrix && frameData && (
                 <text
                   x={RW / 2}
-                  y="225"
+                  y="248"
                   textAnchor="middle"
                   fill="#6B7280"
-                  fontSize="8"
+                  fontSize="11"
                 >
                   Row {frameData.token_idx} = how token "{frameData.token_char}"
-                  attends to past
+                  attends to past · cols = keys · rows = queries
                 </text>
               )}
               {!rhoMatrix && (
@@ -992,20 +992,9 @@ export function BDHArchitectureDiagram({
                   y="150"
                   textAnchor="middle"
                   fill="#475569"
-                  fontSize="9"
+                  fontSize="11"
                 >
                   Each row shows attention from token to all past tokens.
-                </text>
-              )}
-              {isActive(5) && rhoMatrix && frameData && (
-                <text
-                  x={RW / 2}
-                  y="240"
-                  textAnchor="middle"
-                  fill="#475569"
-                  fontSize="8"
-                >
-                  ↑ cols = keys (past tokens) · rows = queries
                 </text>
               )}
             </ArchBox>
@@ -1035,7 +1024,7 @@ export function BDHArchitectureDiagram({
                 y="30"
                 textAnchor="middle"
                 fill="#67E8F9"
-                fontSize="10"
+                fontSize="12"
                 fontFamily="monospace"
               >
                 a* = LN(ρ · v*) → ℝ
@@ -1057,7 +1046,7 @@ export function BDHArchitectureDiagram({
                     x="18"
                     y="72"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     ‖a*‖ = {frameData.a_star_norm?.toFixed(3) ?? "—"}
@@ -1067,7 +1056,7 @@ export function BDHArchitectureDiagram({
                     y="72"
                     textAnchor="end"
                     fill="#475569"
-                    fontSize="8"
+                    fontSize="11"
                   >
                     {frameData.token_idx === 0
                       ? "no past tokens → a*≈0"
@@ -1080,7 +1069,7 @@ export function BDHArchitectureDiagram({
                   y="55"
                   textAnchor="middle"
                   fill="#475569"
-                  fontSize="9"
+                  fontSize="11"
                 >
                   Output of reading from ρ memory
                 </text>
@@ -1115,7 +1104,7 @@ export function BDHArchitectureDiagram({
                     y="34"
                     textAnchor="middle"
                     fill="#FCD34D"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     y = a* @ Ev ({config.d}→{config.n})
@@ -1132,7 +1121,7 @@ export function BDHArchitectureDiagram({
                     x="20"
                     y="98"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     range [{frameData.y_pre_relu.min.toFixed(1)},{" "}
@@ -1142,7 +1131,7 @@ export function BDHArchitectureDiagram({
                     x="20"
                     y="112"
                     fill="#F59E0B"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     {frameData.y_pre_relu.positive_count}/
@@ -1161,7 +1150,7 @@ export function BDHArchitectureDiagram({
                   y="65"
                   textAnchor="middle"
                   fill="#FCD34D"
-                  fontSize="11"
+                  fontSize="13"
                   fontFamily="monospace"
                 >
                   y = a* @ Ev ({config.d}→{config.n})
@@ -1196,7 +1185,7 @@ export function BDHArchitectureDiagram({
                     y="32"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     y_sparse = max(0, y)
@@ -1233,7 +1222,7 @@ export function BDHArchitectureDiagram({
                     y="118"
                     textAnchor="middle"
                     fill="#FFF"
-                    fontSize="11"
+                    fontSize="13"
                     fontWeight="bold"
                   >
                     {(frameData.y_sparsity * 100).toFixed(1)}% sparse
@@ -1243,7 +1232,7 @@ export function BDHArchitectureDiagram({
                     y="132"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                   >
                     {frameData.y_active_count ??
                       Math.round(
@@ -1257,7 +1246,7 @@ export function BDHArchitectureDiagram({
                         x="18"
                         y="146"
                         fill="#F87171"
-                        fontSize="8"
+                        fontSize="11"
                         fontFamily="monospace"
                       >
                         strongest: [H{frameData.y_top_neurons[0]?.head},
@@ -1273,7 +1262,7 @@ export function BDHArchitectureDiagram({
                     y="55"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="11"
+                    fontSize="13"
                   >
                     Sparsity: {(frameData.y_sparsity * 100).toFixed(1)}%
                   </text>
@@ -1282,7 +1271,7 @@ export function BDHArchitectureDiagram({
                     y="75"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="10"
+                    fontSize="12"
                   >
                     {frameData.y_active_count ?? "?"} / {config.total} active
                   </text>
@@ -1293,7 +1282,7 @@ export function BDHArchitectureDiagram({
                   y="70"
                   textAnchor="middle"
                   fill="#FCA5A5"
-                  fontSize="11"
+                  fontSize="13"
                 >
                   y_sparse = ReLU(y)
                 </text>
@@ -1305,7 +1294,7 @@ export function BDHArchitectureDiagram({
               y="178"
               textAnchor="middle"
               fill={isActive(8) ? "#10B981" : "#374151"}
-              fontSize="13"
+              fontSize="15"
               fontWeight="bold"
               opacity={isActive(8) ? 1 : 0.3}
             >
@@ -1376,7 +1365,7 @@ export function BDHArchitectureDiagram({
               y="75"
               textAnchor="middle"
               fill={isActive(9) ? "#E5E7EB" : "#4B5563"}
-              fontSize="11"
+              fontSize="13"
               fontWeight="bold"
               opacity={isActive(9) ? 1 : 0.4}
             >
@@ -1389,7 +1378,7 @@ export function BDHArchitectureDiagram({
                   y="90"
                   textAnchor="middle"
                   fill="#22D3EE"
-                  fontSize="12"
+                  fontSize="14"
                   fontWeight="bold"
                   fontFamily="monospace"
                 >
@@ -1400,7 +1389,7 @@ export function BDHArchitectureDiagram({
                   y="105"
                   textAnchor="middle"
                   fill="#9CA3AF"
-                  fontSize="10"
+                  fontSize="12"
                 >
                   {frameData.gating.both} neurons pass both gates
                 </text>
@@ -1409,7 +1398,7 @@ export function BDHArchitectureDiagram({
                   y="118"
                   textAnchor="middle"
                   fill="#6B7280"
-                  fontSize="9"
+                  fontSize="11"
                 >
                   x-only: {frameData.gating.x_only} | y-only:{" "}
                   {frameData.gating.y_only}
@@ -1439,12 +1428,12 @@ export function BDHArchitectureDiagram({
                     y="32"
                     textAnchor="middle"
                     fill="#6EE7B7"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     (x⊙y) gated input → D ({config.n}→{config.d})
                   </text>
-                  <text x="25" y="46" fill="#9CA3AF" fontSize="9">
+                  <text x="25" y="46" fill="#9CA3AF" fontSize="11">
                     Gated neurons per head:
                   </text>
                   <NeuronGrid
@@ -1458,7 +1447,7 @@ export function BDHArchitectureDiagram({
                   />
                   {frameData.decoder_ds ? (
                     <g>
-                      <text x="25" y="108" fill="#6EE7B7" fontSize="9">
+                      <text x="25" y="108" fill="#6EE7B7" fontSize="11">
                         Δv* output vector:
                       </text>
                       <HeatmapStrip
@@ -1473,7 +1462,7 @@ export function BDHArchitectureDiagram({
                         x="25"
                         y="146"
                         fill="#9CA3AF"
-                        fontSize="9"
+                        fontSize="11"
                         fontFamily="monospace"
                         opacity={Math.min(1, getProgress(10) * 2)}
                       >
@@ -1488,7 +1477,7 @@ export function BDHArchitectureDiagram({
                       y="126"
                       textAnchor="middle"
                       fill="#6EE7B7"
-                      fontSize="10"
+                      fontSize="12"
                       fontFamily="monospace"
                     >
                       Δv* = (x⊙y) @ D → ℝ^{config.d}
@@ -1500,7 +1489,7 @@ export function BDHArchitectureDiagram({
                       y="164"
                       textAnchor="middle"
                       fill="#475569"
-                      fontSize="8"
+                      fontSize="11"
                       opacity={Math.min(1, getProgress(10) * 1.5)}
                     >
                       {frameData.gating.both} active neurons → compressed to{" "}
@@ -1514,7 +1503,7 @@ export function BDHArchitectureDiagram({
                   y="95"
                   textAnchor="middle"
                   fill="#6EE7B7"
-                  fontSize="11"
+                  fontSize="13"
                   fontFamily="monospace"
                 >
                   Δv* = (x⊙y) @ D ({config.n}→{config.d})
@@ -1561,7 +1550,7 @@ export function BDHArchitectureDiagram({
               y="56"
               textAnchor="middle"
               fill={isActive(11) ? "#9CA3AF" : "#374151"}
-              fontSize="11"
+              fontSize="13"
               opacity={isActive(11) ? 1 : 0.35}
             >
               v* + Δv*
@@ -1598,7 +1587,7 @@ export function BDHArchitectureDiagram({
 
           {/* ===== OUTPUT PREDICTIONS ===== */}
           {isActive(12) && predictions && (
-            <g transform={`translate(${CX - 270}, 1545)`}>
+            <g transform={`translate(${CX - 270}, 1570)`}>
               <text
                 x="270"
                 y="0"
@@ -1644,7 +1633,7 @@ export function BDHArchitectureDiagram({
                           y="-4"
                           textAnchor="middle"
                           fill="#A78BFA"
-                          fontSize="8"
+                          fontSize="11"
                           fontWeight="bold"
                         >
                           TOP PREDICTION
@@ -1830,7 +1819,7 @@ function RhoMatrixViz({
       />
 
       {/* Legend */}
-      <text x={labelW} y={gridH + labelH + 10} fill="#6B7280" fontSize="8">
+      <text x={labelW} y={gridH + labelH + 10} fill="#6B7280" fontSize="11">
         dark = low attn
       </text>
       <text
@@ -1838,7 +1827,7 @@ function RhoMatrixViz({
         y={gridH + labelH + 10}
         textAnchor="end"
         fill="#22D3EE"
-        fontSize="8"
+        fontSize="11"
       >
         bright cyan = high attn
       </text>
@@ -1987,15 +1976,6 @@ function HistogramViz({
         strokeWidth="0.5"
         rx="2"
       />
-      <text
-        x={width / 2}
-        y={-3}
-        textAnchor="middle"
-        fill="#9CA3AF"
-        fontSize="8"
-      >
-        ← negative (killed) | positive (survives) →
-      </text>
     </g>
   );
 }
@@ -2044,7 +2024,7 @@ function NeuronGrid({
             x="0"
             y={h * cellH + cellH / 2 + 3}
             fill="#9CA3AF"
-            fontSize="8"
+            fontSize="11"
             fontFamily="monospace"
             opacity={progress >= (h + 1) / numHeads ? 1 : 0.3}
           >
@@ -2221,7 +2201,7 @@ function ArchBox({
         y="19"
         textAnchor="middle"
         fill={isActive ? "#F3F4F6" : "#6B7280"}
-        fontSize="13"
+        fontSize="15"
         fontWeight="bold"
       >
         {title}

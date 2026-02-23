@@ -20,7 +20,7 @@
   "models": {
     "french": {
       "name": "French",
-      "flag": "\ud83c\uddeb\ud83c\uddf7",
+      "flag": "🇫🇷",
       "params": 7179264,
       "n_neurons": 3072,
       "n_heads": 4,
@@ -29,7 +29,7 @@
     },
     "portuguese": {
       "name": "Portuguese",
-      "flag": "\ud83c\uddf5\ud83c\uddf9",
+      "flag": "🇵🇹",
       "params": 7179264,
       "n_neurons": 3072,
       "n_heads": 4,
@@ -37,8 +37,17 @@
       "n_embd": 192
     },
     "merged": {
-      "name": "Merged Polyglot",
-      "flag": "\ud83c\udf0d",
+      "name": "Merged (zero-shot)",
+      "flag": "🔄",
+      "params": 14260224,
+      "n_neurons": 6144,
+      "n_heads": 4,
+      "n_layers": 6,
+      "n_embd": 192
+    },
+    "finetuned": {
+      "name": "Merged (fine-tuned)",
+      "flag": "🌍",
       "params": 14260224,
       "n_neurons": 6144,
       "n_heads": 4,
@@ -48,38 +57,261 @@
   },
   "evaluation": {
     "french": {
-      "french_loss": null,
-      "portuguese_loss": null
+      "french_loss": 0.7969,
+      "portuguese_loss": 2.2982
     },
     "portuguese": {
-      "french_loss": null,
-      "portuguese_loss": null
+      "french_loss": 2.0142,
+      "portuguese_loss": 0.9121
     },
     "merged": {
-      "french_loss": null,
-      "portuguese_loss": null
+      "french_loss": 3.6108,
+      "portuguese_loss": 3.6539
+    },
+    "finetuned": {
+      "french_loss": 0.0553,
+      "portuguese_loss": 0.0495
     }
   },
   "samples": [
     {
       "label": "French prompt",
-      "prompt": "Le parlement europ\u00e9en",
-      "generated": "Le parlement europ\u00e9enat rt itiererie  ticns  iai odet tirs trroo etsr  cad oard.t s os sottdet o at i"
+      "prompt": "Le parlement européen",
+      "french_generated": "Le parlement européen pour les démocraties de conduite de produit et de l'Union européenne et du r�",
+      "portuguese_generated": "Le parlement européen progress at the European Party of the Convince of the Commission concern on the",
+      "merged_generated": "Le parlement européend sailes  oaadnnaaiositmotsdooio  rosi   ott o oinn s oo  to oi os dieus onor on",
+      "finetuned_generated": "Le parlement européen a adopté la résolution sur la politique commerciale.\n<F:en>We must ensure tha",
+      "generated": "Le parlement européen a adopté la résolution sur la politique commerciale.\n<F:en>We must ensure tha"
     },
     {
       "label": "Portuguese prompt",
       "prompt": "O parlamento europeu",
-      "generated": "O parlamento europeurni d ads testt usooauo roooofamiEd siess o rr tn tctit cdoise rausmoraird sedoe"
+      "french_generated": "O parlamento europeut of concerning the problems in the poor the problem of conflict in the supring ",
+      "portuguese_generated": "O parlamento europeu, quanto à segurança a protecção no país de reconhecer que saberto as preoc",
+      "merged_generated": "O parlamento europeurnsds ro so dti asm iair sriiisus due raude roo ro s siis siidasdo moodr s t  oa",
+      "finetuned_generated": "O parlamento europeu adoptou a resolução sobre a política comercial.\n<F:en>We must ensure that al",
+      "generated": "O parlamento europeu adoptou a resolução sobre a política comercial.\n<F:en>We must ensure that al"
     },
     {
       "label": "English prompt",
       "prompt": "The European Parliament",
-      "generated": "The European Parliamentl dt rr rrooaon c to tt iioosrno si itn dodoosas onmrnonrnin initt ni\\xc3 deuis. n "
+      "french_generated": "The European Parliament that the Commission will have tackled the situation of the Commission and the C",
+      "portuguese_generated": "The European Parliament's agenda the Commission.<T:pt>Não é importante a ser plena política e a pres",
+      "merged_generated": "The European Parliament rtas  aood  id ss io td dco�sro enunooome nnreio ro idd it dt dicctm traocst  i",
+      "finetuned_generated": "The European Parliament has adopted the resolution on trade policy.<T:fr>Le Parlement européen a adopt",
+      "generated": "The European Parliament has adopted the resolution on trade policy.<T:fr>Le Parlement européen a adopt"
     },
     {
       "label": "Mixed context",
-      "prompt": "Bonjour, como est\u00e1",
-      "generated": "Bonjour, como est\u00e1r  ooo siratssmm rd rermedrdns   toit s ionau sissis rooooooriroe nants seot, s "
+      "prompt": "Bonjour, como está",
+      "french_generated": "Bonjour, como estágé.<F:en>The possibility of concerning the programmes to the EU and the Council",
+      "portuguese_generated": "Bonjour, como está em comercial que propõe do mercado e do senhor deputado Parlamento está a est",
+      "merged_generated": "Bonjour, como estáo oossr    tr t oa oosiliirnidoreed nosoi t omiusnrnil rea rsditritt  ioms�t dte",
+      "finetuned_generated": "Bonjour, como está growth.<T:fr>L'éducation et la formation sont essentielles pour l'avenir de l'",
+      "generated": "Bonjour, como está growth.<T:fr>L'éducation et la formation sont essentielles pour l'avenir de l'"
     }
-  ]
+  ],
+  "heritage_probe": {
+    "french_input": {
+      "layers": {
+        "0": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5618
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4382
+          }
+        },
+        "1": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5617
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4383
+          }
+        },
+        "2": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5591
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4409
+          }
+        },
+        "3": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5586
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4414
+          }
+        },
+        "4": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.558
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.442
+          }
+        },
+        "5": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5564
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4436
+          }
+        }
+      },
+      "summary": {
+        "french_percentage": 55.93,
+        "portuguese_percentage": 44.07,
+        "dominant_heritage": "french"
+      }
+    },
+    "portuguese_input": {
+      "layers": {
+        "0": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5612
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4388
+          }
+        },
+        "1": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5611
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4389
+          }
+        },
+        "2": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5598
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4402
+          }
+        },
+        "3": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5611
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4389
+          }
+        },
+        "4": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5599
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4401
+          }
+        },
+        "5": {
+          "french": {
+            "origin": "french",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.5588
+          },
+          "portuguese": {
+            "origin": "portuguese",
+            "active_count": 3072,
+            "total_count": 3072,
+            "activation_ratio": 0.4412
+          }
+        }
+      },
+      "summary": {
+        "french_percentage": 56.03,
+        "portuguese_percentage": 43.97,
+        "dominant_heritage": "french"
+      }
+    },
+    "summary": {
+      "french_input_french_pct": 55.93,
+      "french_input_portuguese_pct": 44.07,
+      "portuguese_input_french_pct": 56.03,
+      "portuguese_input_portuguese_pct": 43.97,
+      "routing_quality": 49.95,
+      "clear_separation": false
+    }
+  },
+  "finetune_info": {
+    "source_checkpoint": "checkpoints/merged_polyglot/checkpoint_best.pt",
+    "iters": 500,
+    "lr": 0.0003,
+    "pre_loss": 3.5885,
+    "post_loss": 0.08
+  }
 }

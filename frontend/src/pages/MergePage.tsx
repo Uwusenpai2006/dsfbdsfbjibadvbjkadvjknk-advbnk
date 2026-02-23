@@ -1,20 +1,23 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   GitMerge,
   Check,
-  Sparkles,
   Zap,
-  Loader2,
   Brain,
   BarChart3,
   FileText,
   AlertCircle,
   Terminal,
+  Send,
+  Loader2,
+  Activity,
+  TrendingDown,
+  Timer,
 } from "lucide-react";
 
 /* ================================================================== */
-/*  Types — matched to merge_data.json from analysis/merge.py          */
+/*  Types                                                              */
 /* ================================================================== */
 interface ModelInfo {
   name: string;
@@ -42,658 +45,398 @@ interface Sample {
   label: string;
   prompt: string;
   generated: string;
+  french_generated?: string;
+  portuguese_generated?: string;
+  merged_generated?: string;
+  finetuned_generated?: string;
+}
+interface HeritageProbeLayerData {
+  french: LayerHeritage;
+  portuguese: LayerHeritage;
+}
+interface HeritageProbeInput {
+  layers: Record<string, HeritageProbeLayerData>;
+  summary: {
+    french_percentage: number;
+    portuguese_percentage: number;
+    dominant_heritage: string;
+  };
+}
+interface HeritageProbeData {
+  french_input: HeritageProbeInput;
+  portuguese_input: HeritageProbeInput;
+  summary: {
+    french_input_french_pct: number;
+    french_input_portuguese_pct: number;
+    portuguese_input_french_pct: number;
+    portuguese_input_portuguese_pct: number;
+    routing_quality: number;
+    clear_separation: boolean;
+  };
+}
+interface FinetuneInfo {
+  source_checkpoint: string;
+  iters: number;
+  lr: number;
+  pre_loss: number;
+  post_loss: number;
 }
 interface MergeData {
   heritage: Heritage;
   models: Record<string, ModelInfo>;
   evaluation: Record<string, EvalResult>;
   samples: Sample[];
+  heritage_probe?: HeritageProbeData;
+  finetune_info?: FinetuneInfo;
+}
+interface ProbeResult {
+  text: string;
+  heritage_split: number;
+  layers: Record<number, { french: LayerHeritage; portuguese: LayerHeritage }>;
+  summary: {
+    french_percentage: number;
+    portuguese_percentage: number;
+    dominant_heritage: string;
+  };
+}
+interface LayerHeritage {
+  origin: string;
+  active_count: number;
+  total_count: number;
+  activation_ratio: number;
 }
 
 /* ================================================================== */
 /*  Helpers                                                            */
 /* ================================================================== */
-function fmtParams(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return String(n);
-}
-function fmtNeurons(n: number): string {
-  return n.toLocaleString();
-}
-function lossColor(v: number | null): string {
-  if (v === null) return "text-gray-500";
-  if (v < 1.0) return "text-emerald-400";
-  if (v < 2.0) return "text-amber-400";
-  return "text-red-400";
+const fmtP = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${(n / 1e3).toFixed(0)}K`;
+const fmtN = (n: number) => n.toLocaleString();
+const lossColor = (v: number | null) =>
+  v === null
+    ? "text-[#4A5568]"
+    : v < 1.2
+      ? "text-[#00C896]"
+      : v < 2.0
+        ? "text-amber-400"
+        : "text-red-400";
+const lossDisplay = (v: number | null) => (v === null ? "—" : v.toFixed(4));
+const API = "/api/merge";
+
+/* ================================================================== */
+/*  Main                                                               */
+/* ================================================================== */
+export function MergePage() {
+  const [data, setData] = useState<MergeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [backendAvailable, setBackendAvailable] = useState(false);
+
+  useEffect(() => {
+    fetch("/merge/merge_data.json")
+      .then((r) => r.json())
+      .then((d) => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+    fetch("/health")
+      .then((r) => (r.ok ? setBackendAvailable(true) : null))
+      .catch(() => {});
+  }, []);
+
+  if (loading)
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "#070D12" }}
+      >
+        <Loader2 className="w-8 h-8 animate-spin text-[#8B95A5]" />
+      </div>
+    );
+
+  const d = data;
+  const h = d?.heritage;
+  const models = d?.models;
+  const ev = d?.evaluation;
+  const samples = d?.samples;
+  const hasEval = ev && Object.values(ev).some((e) => e.french_loss !== null);
+  const hasFT = ev && "finetuned" in ev;
+  const probeData = d?.heritage_probe;
+  const ftInfo = d?.finetune_info;
+
+  return (
+    <div
+      className="max-w-7xl mx-auto px-4 py-8 space-y-10"
+      style={{ background: "#070D12", minHeight: "100vh" }}
+    >
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <div className="flex items-center gap-3 mb-2">
+          <GitMerge className="w-8 h-8 text-[#00C896]" />
+          <h1 className="text-3xl font-bold text-[#E2E8F0]">Model Merging</h1>
+        </div>
+        <p className="text-[#8B95A5] max-w-3xl">
+          BDH's sparse, modular architecture enables direct concatenation of
+          specialist models.
+          {hasFT
+            ? " After a brief fine-tuning step, the merged model handles both languages with near-specialist quality."
+            : " Each specialist's neurons operate independently in the merged model."}
+        </p>
+      </motion.div>
+
+      {h && models && (
+        <MergeDiagram heritage={h} models={models} hasFT={hasFT} />
+      )}
+      {models && ev && <ModelCards models={models} evaluation={ev} />}
+      {hasEval && <LossComparison evaluation={ev!} hasFT={!!hasFT} />}
+      {ftInfo && <FinetuneInfoPanel info={ftInfo} />}
+      {samples && samples.length > 0 && <SampleGenerations samples={samples} />}
+      {h && <HeritageMap heritage={h} />}
+      {probeData && h && (
+        <PrecomputedHeritageProbe probe={probeData} heritage={h} />
+      )}
+      {h && <HeritageProbe heritage={h} backendAvailable={backendAvailable} />}
+      <LiveGeneration backendAvailable={backendAvailable} />
+      <InsightPanel hasFT={!!hasFT} />
+    </div>
+  );
 }
 
 /* ================================================================== */
-/*  Section 1: Merge Process Diagram (animated)                        */
+/*  Merge Diagram                                                      */
 /* ================================================================== */
 function MergeDiagram({
-  data,
-  step,
-  setStep,
+  heritage: h,
+  models,
+  hasFT,
 }: {
-  data: MergeData | null;
-  step: number;
-  setStep: (s: number) => void;
+  heritage: Heritage;
+  models: Record<string, ModelInfo>;
+  hasFT?: boolean;
 }) {
-  const m1 = data?.models[data.heritage.model1_name];
-  const m2 = data?.models[data.heritage.model2_name];
-  const merged = data?.models.merged;
-  const N = data?.heritage.neurons_per_head_original ?? 8192;
-  const N2 = data?.heritage.neurons_per_head_merged ?? 16384;
+  const [step, setStep] = useState(0);
+  const maxStep = hasFT ? 4 : 3;
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => (s + 1) % maxStep), 1500);
+    return () => clearInterval(t);
+  }, [maxStep]);
 
   const steps = [
     {
-      title: m1?.name ?? "Model A",
-      desc: "Specialist",
-      icon: m1?.flag ?? "🇫🇷",
+      label: h.model1_name.charAt(0).toUpperCase() + h.model1_name.slice(1),
+      sub: "Specialist",
+      icon: "FR",
     },
     {
-      title: m2?.name ?? "Model B",
-      desc: "Specialist",
-      icon: m2?.flag ?? "🇵🇹",
+      label: h.model2_name.charAt(0).toUpperCase() + h.model2_name.slice(1),
+      sub: "Specialist",
+      icon: "PT",
     },
-    { title: "Merge", desc: "Concatenate N", icon: "🔀" },
-    { title: "Polyglot", desc: "Both languages", icon: "🌍" },
+    { label: "Merge", sub: "Concatenate N", icon: "M" },
+    ...(hasFT
+      ? [{ label: "Fine-tune", sub: "Adapt routing", icon: "FT" }]
+      : []),
+    { label: "Polyglot", sub: "Both languages", icon: "P" },
   ];
+
+  const fr = models[h.model1_name];
+  const pt = models[h.model2_name];
+  const mg = models.finetuned || models.merged;
 
   return (
     <motion.div
-      className="glass-card p-6 mb-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.1 }}
     >
-      <h2 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-5 flex items-center gap-2">
-        <GitMerge size={14} className="text-bdh-accent" />
-        Merge Process
-      </h2>
-
-      {/* Step indicators */}
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-lg font-semibold">MERGE PROCESS</h2>
+      </div>
       <div className="flex items-center justify-between mb-8">
         {steps.map((s, i) => (
           <React.Fragment key={i}>
-            <motion.button
-              onClick={() => setStep(i)}
-              className="flex flex-col items-center"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <div
-                className={`w-14 h-14 rounded-full flex items-center justify-center mb-2 transition-all text-xl ${
-                  i < step
-                    ? "bg-emerald-500/20 border-2 border-emerald-500/50"
-                    : i === step
-                      ? "bg-bdh-accent/20 border-2 border-bdh-accent ring-4 ring-bdh-accent/15"
-                      : "bg-gray-800/50 border-2 border-gray-700/50"
-                }`}
+            <div className="flex flex-col items-center">
+              <motion.div
+                className={`w-14 h-14 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-300
+                ${i <= step ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]" : "border-white/[0.12] text-[#4A5568]"}`}
+                animate={i === step ? { scale: [1, 1.1, 1] } : {}}
+                transition={{ repeat: Infinity, duration: 1.5 }}
               >
-                {i < step ? (
-                  <Check size={20} className="text-emerald-400" />
-                ) : (
-                  s.icon
-                )}
-              </div>
+                {i < step ? <Check className="w-5 h-5" /> : s.icon}
+              </motion.div>
               <span
-                className={`text-xs font-semibold ${i <= step ? "text-white" : "text-gray-500"}`}
+                className={`text-xs mt-1 ${i <= step ? "text-[#00C896]" : "text-[#4A5568]"}`}
               >
-                {s.title}
+                {s.label}
               </span>
-              <span className="text-[10px] text-gray-500">{s.desc}</span>
-            </motion.button>
+              <span className="text-[10px] text-[#4A5568]">{s.sub}</span>
+            </div>
             {i < steps.length - 1 && (
               <div
-                className={`flex-1 h-0.5 mx-3 rounded ${i < step ? "bg-emerald-500/50" : "bg-gray-700/50"}`}
+                className={`flex-1 h-0.5 mx-2 ${i < step ? "bg-[#00C896]/50" : "bg-white/10"}`}
               />
             )}
           </React.Fragment>
         ))}
       </div>
-
-      {/* Animated visual */}
-      <div className="relative h-72 overflow-hidden">
-        {/* Model A */}
+      {/* Visual */}
+      <div className="grid grid-cols-3 gap-4 items-center">
         <motion.div
-          className="absolute left-4 top-4 w-60 rounded-xl p-4 border-2 border-blue-500/40 bg-blue-500/8"
-          animate={{
-            x: step >= 2 ? 80 : 0,
-            y: step >= 2 ? 50 : 0,
-            scale: step >= 2 ? 0.75 : 1,
-            opacity: step >= 3 ? 0.3 : 1,
-          }}
-          transition={{ type: "spring", stiffness: 200, damping: 25 }}
+          className="border border-white/10 rounded-lg p-4"
+          animate={{ opacity: step >= 0 ? 1 : 0.3 }}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">{m1?.flag ?? "🇫🇷"}</span>
-            <span className="font-bold text-blue-400 text-sm">
-              {m1?.name ?? "French"}
+          <div className="flex items-center gap-2 text-sm mb-2">
+            <span className="text-[#00C896] font-mono">FR</span>
+            <span className="text-[#00C896] font-semibold">{fr?.name}</span>
+          </div>
+          <div className="text-xs text-[#8B95A5]">
+            N/head:{" "}
+            <span className="text-[#E2E8F0] font-mono">
+              {fmtN(fr?.n_neurons || 0)}
             </span>
           </div>
-          <div className="text-[11px] text-gray-400 space-y-1">
-            <div>
-              Neurons/head:{" "}
-              <span className="text-blue-300 font-mono">{fmtNeurons(N)}</span>
-            </div>
-            <div>
-              Params:{" "}
-              <span className="text-blue-300 font-mono">
-                {fmtParams(m1?.params ?? 0)}
-              </span>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-8 gap-0.5">
-            {Array.from({ length: 24 }, (_, i) => (
-              <div key={i} className="w-2.5 h-2.5 rounded-sm bg-blue-500/40" />
-            ))}
+          <div className="flex gap-0.5 mt-2">
+            {Array(12)
+              .fill(0)
+              .map((_, i) => (
+                <div key={i} className="w-3 h-5 rounded-sm bg-[#00C896]/40" />
+              ))}
           </div>
         </motion.div>
-
-        {/* Model B */}
         <motion.div
-          className="absolute right-4 top-4 w-60 rounded-xl p-4 border-2 border-emerald-500/40 bg-emerald-500/8"
-          animate={{
-            x: step >= 2 ? -80 : 0,
-            y: step >= 2 ? 50 : 0,
-            scale: step >= 2 ? 0.75 : 1,
-            opacity: step >= 3 ? 0.3 : 1,
-          }}
-          transition={{ type: "spring", stiffness: 200, damping: 25 }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">{m2?.flag ?? "🇵🇹"}</span>
-            <span className="font-bold text-emerald-400 text-sm">
-              {m2?.name ?? "Portuguese"}
-            </span>
-          </div>
-          <div className="text-[11px] text-gray-400 space-y-1">
-            <div>
-              Neurons/head:{" "}
-              <span className="text-emerald-300 font-mono">
-                {fmtNeurons(N)}
-              </span>
-            </div>
-            <div>
-              Params:{" "}
-              <span className="text-emerald-300 font-mono">
-                {fmtParams(m2?.params ?? 0)}
-              </span>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-8 gap-0.5">
-            {Array.from({ length: 24 }, (_, i) => (
-              <div
-                key={i}
-                className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40"
-              />
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Merge icon */}
-        <motion.div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
-          animate={{
-            scale: step === 2 ? [1, 1.3, 1] : step >= 3 ? 0.8 : 0,
-            opacity: step >= 2 ? 1 : 0,
-          }}
+          className={`border rounded-lg p-4 text-center ${step >= 3 ? "border-white/[0.12] bg-white/[0.03]" : "border-white/10"}`}
+          animate={{ opacity: step >= 2 ? 1 : 0.2 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="w-16 h-16 rounded-full bg-bdh-accent/20 border-2 border-bdh-accent flex items-center justify-center shadow-lg shadow-bdh-accent/20">
-            <GitMerge size={28} className="text-bdh-accent" />
-          </div>
-        </motion.div>
-
-        {/* Merged model */}
-        <motion.div
-          className="absolute left-1/2 bottom-2 -translate-x-1/2 w-72 rounded-xl p-4 border-2 border-purple-500/40 bg-purple-500/8"
-          animate={{
-            opacity: step >= 3 ? 1 : 0,
-            y: step >= 3 ? 0 : 40,
-            scale: step >= 3 ? 1 : 0.9,
-          }}
-          transition={{ type: "spring", stiffness: 200, damping: 25 }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">🌍</span>
-            <span className="font-bold text-purple-400 text-sm">
-              Merged Polyglot
-            </span>
-          </div>
-          <div className="text-[11px] text-gray-400">
-            Neurons/head:{" "}
-            <span className="text-purple-300 font-mono">{fmtNeurons(N2)}</span>
-            {" · "}
-            Params:{" "}
-            <span className="text-purple-300 font-mono">
-              {fmtParams(merged?.params ?? 0)}
-            </span>
-          </div>
-          <div
-            className="mt-2 grid gap-[2px]"
-            style={{ gridTemplateColumns: "repeat(16, 1fr)" }}
-          >
-            {Array.from({ length: 48 }, (_, i) => (
-              <div
-                key={i}
-                className={`w-2 h-2 rounded-sm ${i < 24 ? "bg-blue-500/40" : "bg-emerald-500/40"}`}
-              />
-            ))}
-          </div>
-          <div className="flex gap-4 mt-2 text-[10px]">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-sm bg-blue-500/50" />
-              <span className="text-gray-500">
-                {m1?.name ?? "French"} neurons
-              </span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-sm bg-emerald-500/50" />
-              <span className="text-gray-500">
-                {m2?.name ?? "Portuguese"} neurons
-              </span>
-            </span>
-          </div>
-        </motion.div>
-      </div>
-    </motion.div>
-  );
-}
-
-/* ================================================================== */
-/*  Section 2: Loss Comparison Table                                   */
-/* ================================================================== */
-function LossTable({ data }: { data: MergeData }) {
-  const { evaluation, heritage, models } = data;
-  const name1 = heritage.model1_name;
-  const name2 = heritage.model2_name;
-  const m1 = models[name1];
-  const m2 = models[name2];
-
-  const rows = [
-    {
-      key: name1,
-      label: m1?.name ?? name1,
-      flag: m1?.flag ?? "🇫🇷",
-      color: "blue",
-    },
-    {
-      key: name2,
-      label: m2?.name ?? name2,
-      flag: m2?.flag ?? "🇵🇹",
-      color: "emerald",
-    },
-    { key: "merged", label: "Merged Polyglot", flag: "🌍", color: "purple" },
-  ];
-
-  const hasEval = Object.keys(evaluation).length > 0;
-
-  return (
-    <motion.div
-      className="glass-card p-6 mb-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.1 }}
-    >
-      <h2 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <BarChart3 size={14} className="text-bdh-accent" />
-        Loss Comparison
-        <span className="text-[10px] text-gray-500 font-normal ml-2">
-          Next-byte prediction loss (lower = better)
-        </span>
-      </h2>
-
-      {!hasEval ? (
-        <div className="text-center py-8 text-gray-500">
-          <AlertCircle size={24} className="mx-auto mb-2 opacity-40" />
-          <p className="text-sm">
-            Run evaluation after merging to populate this table.
-          </p>
-          <code className="text-xs text-bdh-accent/70 mt-2 block">
-            python analysis/merge.py --model1 ... --model2 ... --output ...
-          </code>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left py-3 px-3 text-gray-500 font-semibold">
-                  Model
-                </th>
-                <th className="text-right py-3 px-3 text-blue-400 font-semibold">
-                  French Loss
-                </th>
-                <th className="text-right py-3 px-3 text-emerald-400 font-semibold">
-                  Portuguese Loss
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => {
-                const ev = evaluation[row.key];
-                const isMerged = row.key === "merged";
-                return (
-                  <motion.tr
-                    key={row.key}
-                    className={`border-b border-gray-800/40 ${isMerged ? "bg-purple-500/5" : ""}`}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.08 }}
-                  >
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">{row.flag}</span>
-                        <span
-                          className={`font-semibold ${isMerged ? "text-purple-400" : "text-gray-200"}`}
-                        >
-                          {row.label}
-                        </span>
-                      </div>
-                    </td>
-                    <td
-                      className={`py-3 px-3 text-right font-mono font-bold ${lossColor(ev?.french_loss ?? null)}`}
-                    >
-                      {ev?.french_loss != null
-                        ? ev.french_loss.toFixed(4)
-                        : "—"}
-                    </td>
-                    <td
-                      className={`py-3 px-3 text-right font-mono font-bold ${lossColor(ev?.portuguese_loss ?? null)}`}
-                    >
-                      {ev?.portuguese_loss != null
-                        ? ev.portuguese_loss.toFixed(4)
-                        : "—"}
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {hasEval && (
-        <motion.div
-          className="mt-4 p-3 rounded-xl bg-purple-500/8 border border-purple-500/15"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-        >
-          <p className="text-xs text-purple-300/80 leading-relaxed">
-            <Sparkles size={12} className="inline mr-1" />
-            Each specialist excels at its own language but fails at the other.
-            The merged model handles{" "}
-            <strong className="text-white">both languages</strong> — without any
-            fine-tuning. This is BDH's compositional advantage.
-          </p>
-        </motion.div>
-      )}
-    </motion.div>
-  );
-}
-
-/* ================================================================== */
-/*  Section 3: Sample Generations                                      */
-/* ================================================================== */
-function SampleGenerations({ data }: { data: MergeData }) {
-  const { samples } = data;
-
-  if (!samples || samples.length === 0) {
-    return (
-      <motion.div
-        className="glass-card p-6 mb-6"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <h2 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-          <FileText size={14} className="text-bdh-accent" />
-          Sample Generations
-        </h2>
-        <p className="text-sm text-gray-500 text-center py-6">
-          Samples will appear after running the merge pipeline.
-        </p>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div
-      className="glass-card p-6 mb-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.2 }}
-    >
-      <h2 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <FileText size={14} className="text-bdh-accent" />
-        Sample Generations
-        <span className="text-[10px] text-gray-500 font-normal ml-2">
-          From the merged polyglot model
-        </span>
-      </h2>
-
-      <div className="space-y-3">
-        {samples.map((s, i) => (
-          <motion.div
-            key={i}
-            className="rounded-xl p-4 bg-gray-900/40 border border-gray-800/40"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 + i * 0.06 }}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] uppercase tracking-wider font-bold text-bdh-accent/70 bg-bdh-accent/10 px-2 py-0.5 rounded">
-                {s.label}
-              </span>
-            </div>
-            <div className="font-mono text-sm leading-relaxed">
-              <span className="text-cyan-400">{s.prompt}</span>
-              <span className="text-gray-300">
-                {s.generated.slice(s.prompt.length)}
-              </span>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
-
-/* ================================================================== */
-/*  Section 4: Neuron Heritage Map                                     */
-/* ================================================================== */
-function HeritageMap({ data }: { data: MergeData }) {
-  const { heritage } = data;
-  const N = heritage.neurons_per_head_original;
-  const N2 = heritage.neurons_per_head_merged;
-  const totalPerModel = heritage.total_neurons_per_model;
-
-  // Generate a representative strip of neurons
-  const stripSize = 120;
-  const neurons = useMemo(() => {
-    return Array.from({ length: stripSize }, (_, i) => {
-      const neuronIdx = Math.floor((i / stripSize) * N2);
-      return {
-        idx: neuronIdx,
-        origin: neuronIdx < N ? heritage.model1_name : heritage.model2_name,
-        color: neuronIdx < N ? "blue" : "emerald",
-      };
-    });
-  }, [N, N2, heritage]);
-
-  return (
-    <motion.div
-      className="glass-card p-6 mb-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.3 }}
-    >
-      <h2 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <Brain size={14} className="text-bdh-accent" />
-        Neuron Heritage Map
-      </h2>
-
-      <p className="text-xs text-gray-500 mb-4">
-        Each neuron in the merged model traces back to exactly one specialist.
-        {heritage.model1_name.charAt(0).toUpperCase() +
-          heritage.model1_name.slice(1)}{" "}
-        neurons occupy indices 0–{fmtNeurons(N - 1)},{" "}
-        {heritage.model2_name.charAt(0).toUpperCase() +
-          heritage.model2_name.slice(1)}{" "}
-        neurons occupy {fmtNeurons(N)}–{fmtNeurons(N2 - 1)}.
-      </p>
-
-      {/* Visual neuron strip */}
-      <div className="mb-4">
-        <div className="flex gap-[1px] h-8 rounded-lg overflow-hidden">
-          {neurons.map((n, i) => (
-            <motion.div
-              key={i}
-              className="flex-1"
-              style={{
-                backgroundColor:
-                  n.color === "blue"
-                    ? "rgba(59,130,246,0.5)"
-                    : "rgba(16,185,129,0.5)",
-              }}
-              initial={{ scaleY: 0 }}
-              animate={{ scaleY: 1 }}
-              transition={{ delay: i * 0.003, duration: 0.2 }}
-            />
-          ))}
-        </div>
-        <div className="flex justify-between mt-1 text-[9px] font-mono text-gray-500">
-          <span>0</span>
-          <span className="text-blue-400/60">← {heritage.model1_name} →</span>
-          <span>{fmtNeurons(N)}</span>
-          <span className="text-emerald-400/60">
-            ← {heritage.model2_name} →
-          </span>
-          <span>{fmtNeurons(N2)}</span>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-lg bg-blue-500/8 border border-blue-500/15 p-3 text-center">
-          <div className="text-lg font-mono font-bold text-blue-400">
-            {fmtNeurons(totalPerModel)}
-          </div>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">
-            {heritage.model1_name} neurons
-          </div>
-        </div>
-        <div className="rounded-lg bg-emerald-500/8 border border-emerald-500/15 p-3 text-center">
-          <div className="text-lg font-mono font-bold text-emerald-400">
-            {fmtNeurons(totalPerModel)}
-          </div>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">
-            {heritage.model2_name} neurons
-          </div>
-        </div>
-        <div className="rounded-lg bg-purple-500/8 border border-purple-500/15 p-3 text-center">
-          <div className="text-lg font-mono font-bold text-purple-400">
-            {fmtNeurons(heritage.total_neurons_merged)}
-          </div>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">
-            merged total
-          </div>
-        </div>
-      </div>
-
-      <motion.div
-        className="mt-4 p-3 rounded-xl bg-bdh-accent/8 border border-bdh-accent/15"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-      >
-        <p className="text-xs text-bdh-accent/80 leading-relaxed">
-          <Sparkles size={12} className="inline mr-1" />
-          In a transformer, you'd need to retrain from scratch to combine
-          knowledge. BDH's sparse, modular neuron space allows{" "}
-          <strong className="text-white">direct concatenation</strong> — each
-          specialist's neurons operate independently in the merged model.
-        </p>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-/* ================================================================== */
-/*  Section 5: Model Stats Cards                                       */
-/* ================================================================== */
-function ModelCards({ data }: { data: MergeData }) {
-  const { models, heritage, evaluation } = data;
-  const name1 = heritage.model1_name;
-  const name2 = heritage.model2_name;
-
-  const cards = [
-    { key: name1, ring: "ring-blue-500/30", accent: "text-blue-400" },
-    { key: name2, ring: "ring-emerald-500/30", accent: "text-emerald-400" },
-    { key: "merged", ring: "ring-purple-500/30", accent: "text-purple-400" },
-  ];
-
-  return (
-    <div className="grid md:grid-cols-3 gap-4 mb-6">
-      {cards.map((c, i) => {
-        const m = models[c.key];
-        const ev = evaluation[c.key];
-        if (!m) return null;
-        const isMerged = c.key === "merged";
-        return (
-          <motion.div
-            key={c.key}
-            className={`glass-card p-5 ${isMerged ? `ring-2 ${c.ring}` : ""}`}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 + i * 0.08 }}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-xl">{m.flag}</span>
-              <h3 className={`font-bold ${c.accent}`}>{m.name}</h3>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Parameters</span>
-                <span className="font-mono">{fmtParams(m.params)}</span>
+          {step >= 3 && mg && (
+            <>
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <span className="font-semibold text-[#E2E8F0]">{mg.name}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Neurons/Head</span>
-                <span className="font-mono">{fmtNeurons(m.n_neurons)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Layers × Heads</span>
-                <span className="font-mono">
-                  {m.n_layers} × {m.n_heads}
+              <div className="text-xs text-[#8B95A5]">
+                N/head:{" "}
+                <span className="font-mono text-[#E2E8F0]">
+                  {fmtN(mg.n_neurons)}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Embedding dim</span>
-                <span className="font-mono">{m.n_embd}</span>
+              <div className="flex gap-0.5 mt-2 justify-center flex-wrap">
+                {Array(12)
+                  .fill(0)
+                  .map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-3 h-5 rounded-sm bg-[#00C896]/40"
+                    />
+                  ))}
+                {Array(12)
+                  .fill(0)
+                  .map((_, i) => (
+                    <div
+                      key={i + 12}
+                      className="w-3 h-5 rounded-sm bg-sky-500/40"
+                    />
+                  ))}
               </div>
+              <div className="flex gap-3 justify-center mt-1 text-[10px] text-[#4A5568]">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-sm bg-[#00C896]" /> French
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-sm bg-sky-500" /> Portuguese
+                </span>
+              </div>
+            </>
+          )}
+        </motion.div>
+        <motion.div
+          className="border border-white/10 rounded-lg p-4"
+          animate={{ opacity: step >= 1 ? 1 : 0.3 }}
+        >
+          <div className="flex items-center gap-2 text-sm mb-2">
+            <span className="text-sky-400 font-mono">PT</span>
+            <span className="text-sky-300 font-semibold">{pt?.name}</span>
+          </div>
+          <div className="text-xs text-[#8B95A5]">
+            N/head:{" "}
+            <span className="text-[#E2E8F0] font-mono">
+              {fmtN(pt?.n_neurons || 0)}
+            </span>
+          </div>
+          <div className="flex gap-0.5 mt-2">
+            {Array(12)
+              .fill(0)
+              .map((_, i) => (
+                <div key={i} className="w-3 h-5 rounded-sm bg-sky-500/40" />
+              ))}
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ================================================================== */
+/*  Model Cards                                                        */
+/* ================================================================== */
+function ModelCards({
+  models,
+  evaluation,
+}: {
+  models: Record<string, ModelInfo>;
+  evaluation: Record<string, EvalResult>;
+}) {
+  const order = Object.keys(models);
+  const colors: Record<string, string> = {
+    french: "cyan",
+    portuguese: "emerald",
+    merged: "amber",
+    finetuned: "purple",
+  };
+  return (
+    <div
+      className={`grid grid-cols-1 gap-4 ${order.length <= 3 ? "md:grid-cols-3" : "md:grid-cols-2 lg:grid-cols-4"}`}
+    >
+      {order.map((k, i) => {
+        const m = models[k];
+        const ev = evaluation[k];
+        const c = colors[k] || "zinc";
+        return (
+          <motion.div
+            key={k}
+            className={`glass-card p-5 ${k === "finetuned" ? "" : ""}`}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 * i }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs">{m.flag}</span>
+              <span className="font-semibold text-[#E2E8F0]">{m.name}</span>
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <Row label="Parameters" value={fmtP(m.params)} />
+              <Row label="Neurons/Head" value={fmtN(m.n_neurons)} />
+              <Row
+                label="Layers x Heads"
+                value={`${m.n_layers} x ${m.n_heads}`}
+              />
+              <Row label="Embedding dim" value={String(m.n_embd)} />
               {ev && (
                 <>
-                  <div className="border-t border-gray-800/40 my-2" />
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">French loss</span>
-                    <span
-                      className={`font-mono font-bold ${lossColor(ev.french_loss)}`}
-                    >
-                      {ev.french_loss?.toFixed(4) ?? "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Portuguese loss</span>
-                    <span
-                      className={`font-mono font-bold ${lossColor(ev.portuguese_loss)}`}
-                    >
-                      {ev.portuguese_loss?.toFixed(4) ?? "—"}
-                    </span>
-                  </div>
+                  <div className="border-t border-white/[0.06] my-2" />
+                  <Row
+                    label="French loss"
+                    value={lossDisplay(ev.french_loss)}
+                    valueClass={lossColor(ev.french_loss)}
+                  />
+                  <Row
+                    label="Portuguese loss"
+                    value={lossDisplay(ev.portuguese_loss)}
+                    valueClass={lossColor(ev.portuguese_loss)}
+                  />
                 </>
               )}
             </div>
@@ -703,111 +446,271 @@ function ModelCards({ data }: { data: MergeData }) {
     </div>
   );
 }
+function Row({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-[#8B95A5]">{label}</span>
+      <span className={`font-mono ${valueClass || "text-[#E2E8F0]"}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
 
 /* ================================================================== */
-/*  Why This Matters — insight panel                                   */
+/*  Loss Comparison                                                    */
 /* ================================================================== */
-function InsightPanel() {
+function LossComparison({
+  evaluation,
+  hasFT,
+}: {
+  evaluation: Record<string, EvalResult>;
+  hasFT: boolean;
+}) {
+  const order = Object.keys(evaluation);
+  const flags: Record<string, string> = {
+    french: "FR",
+    portuguese: "PT",
+    merged: "MG",
+    finetuned: "FT",
+  };
+  const rowColors: Record<string, string> = {
+    merged: "",
+    finetuned: "",
+  };
   return (
     <motion.div
-      className="glass-card p-6 mb-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.4 }}
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.2 }}
     >
-      <h3 className="text-sm font-bold mb-4 flex items-center gap-2">
-        <Sparkles size={14} className="text-bdh-accent" />
-        Why This Matters
-      </h3>
-      <div className="grid md:grid-cols-2 gap-5">
-        <div>
-          <h4 className="text-sm font-semibold text-red-400 mb-2">
-            ❌ Transformers Can't Do This
-          </h4>
-          <p className="text-gray-400 text-xs leading-relaxed">
-            Transformer weights are densely interconnected — every neuron talks
-            to every other. Concatenating two transformer models produces
-            garbage. Any "merging" requires expensive fine-tuning, distillation,
-            or careful weight interpolation.
-          </p>
-        </div>
-        <div>
-          <h4 className="text-sm font-semibold text-emerald-400 mb-2">
-            ✅ BDH Does It Naturally
-          </h4>
-          <p className="text-gray-400 text-xs leading-relaxed">
-            BDH's sparse, modular architecture means neurons operate
-            independently. Concatenating two models is as simple as stacking
-            their neuron spaces and averaging shared parameters. No fine-tuning
-            needed.
-          </p>
-        </div>
+      <div className="flex items-center gap-2 mb-4">
+        <BarChart3 className="w-5 h-5 text-[#8B95A5]" />
+        <h2 className="text-lg font-semibold">LOSS COMPARISON</h2>
+        <span className="text-xs text-[#4A5568] ml-2">
+          NEXT-BYTE PREDICTION LOSS (LOWER = BETTER)
+        </span>
       </div>
-      <div className="mt-4 p-3 bg-bdh-accent/10 border border-bdh-accent/25 rounded-xl">
-        <p className="text-xs text-bdh-accent leading-relaxed">
-          <Zap size={12} className="inline mr-1" />
-          <strong>Implication:</strong> Train specialists for specific tasks,
-          merge them freely. This enables{" "}
-          <span className="text-white font-semibold">
-            modular AI development
-          </span>{" "}
-          — a paradigm impossible with current transformer architectures.
-        </p>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-[#4A5568] border-b border-white/[0.06]">
+            <th className="text-left pb-2 w-1/3">Model</th>
+            <th className="text-right pb-2 text-[#CBD5E0]">French Loss</th>
+            <th className="text-right pb-2 text-[#CBD5E0]">Portuguese Loss</th>
+          </tr>
+        </thead>
+        <tbody>
+          {order.map((k) => {
+            const ev = evaluation[k];
+            return (
+              <tr
+                key={k}
+                className={`border-b border-white/[0.06] ${rowColors[k] || ""}`}
+              >
+                <td className="py-3 flex items-center gap-2">
+                  <span className="text-xs">{flags[k] || k}</span>
+                  <span className="font-medium">
+                    {k === "finetuned"
+                      ? "Merged (fine-tuned)"
+                      : k === "merged"
+                        ? "Merged (zero-shot)"
+                        : k.charAt(0).toUpperCase() + k.slice(1)}
+                  </span>
+                </td>
+                <td
+                  className={`text-right font-mono ${lossColor(ev.french_loss)}`}
+                >
+                  {lossDisplay(ev.french_loss)}
+                </td>
+                <td
+                  className={`text-right font-mono ${lossColor(ev.portuguese_loss)}`}
+                >
+                  {lossDisplay(ev.portuguese_loss)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="mt-4 p-3 bg-white/[0.03] rounded-lg text-sm text-[#8B95A5] flex items-start gap-2">
+        {hasFT ? (
+          <span>
+            The zero-shot merge shows degraded loss because averaging embeddings
+            blurs the routing signal. After just ~500 iterations of fine-tuning
+            on mixed data, the model{" "}
+            <b className="text-[#E2E8F0]">
+              recovers near-specialist quality on both languages
+            </b>{" "}
+            — proving BDH's neuron spaces are truly composable.
+          </span>
+        ) : (
+          <span>
+            Each specialist excels at its own language. The merged model handles{" "}
+            <b className="text-[#E2E8F0]">both languages</b> after concatenating
+            neuron spaces.
+          </span>
+        )}
       </div>
     </motion.div>
   );
 }
 
 /* ================================================================== */
-/*  How To Run — instructions for user                                 */
+/*  Sample Generations                                                 */
 /* ================================================================== */
-function HowToRun() {
-  const steps = [
+function SampleGenerations({ samples }: { samples: Sample[] }) {
+  const [selected, setSelected] = useState(0);
+  const s = samples[selected];
+  const hasFT = !!s?.finetuned_generated;
+
+  const gens = [
+    { key: "french_generated", label: "French Specialist", color: "cyan" },
     {
-      title: "Train Portuguese model",
-      cmd: "python training/train.py --config training/configs/portuguese.yaml",
-      note: "Architecture must match French model exactly",
+      key: "portuguese_generated",
+      label: "Portuguese Specialist",
+      color: "emerald",
     },
-    {
-      title: "Run merge",
-      cmd: "python analysis/merge.py \\\n  --model1 checkpoints/french_specialist/checkpoint_best.pt \\\n  --model2 checkpoints/portuguese_specialist/checkpoint_best.pt \\\n  --output checkpoints/merged_polyglot.pt",
-      note: "Concatenates neuron spaces + evaluates on both languages",
-    },
-    {
-      title: "Refresh this page",
-      cmd: "",
-      note: "The merge script generates merge_data.json automatically",
-    },
+    { key: "merged_generated", label: "Merged (zero-shot)", color: "amber" },
+    ...(hasFT
+      ? [
+          {
+            key: "finetuned_generated",
+            label: "Merged (fine-tuned)",
+            color: "purple",
+          },
+        ]
+      : []),
   ];
 
   return (
     <motion.div
-      className="glass-card p-6 mb-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.2 }}
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.3 }}
     >
-      <h2 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <Terminal size={14} className="text-bdh-accent" />
-        How to Run the Merge Pipeline
-      </h2>
-      <div className="space-y-4">
-        {steps.map((s, i) => (
-          <div key={i} className="flex gap-3">
-            <div className="w-7 h-7 rounded-full bg-bdh-accent/15 border border-bdh-accent/30 flex items-center justify-center text-xs font-bold text-bdh-accent shrink-0 mt-0.5">
-              {i + 1}
+      <div className="flex items-center gap-2 mb-4">
+        <FileText className="w-5 h-5 text-[#8B95A5]" />
+        <h2 className="text-lg font-semibold">SAMPLE GENERATIONS</h2>
+        <span className="text-xs text-[#4A5568] ml-2">
+          SAME PROMPT THROUGH ALL MODELS
+        </span>
+      </div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {samples.map((sample, i) => (
+          <button
+            key={i}
+            onClick={() => setSelected(i)}
+            className={`px-3 py-1 text-xs rounded-full border transition-all ${
+              i === selected
+                ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]"
+                : "border-white/10 text-[#4A5568] hover:border-white/20"
+            }`}
+          >
+            {sample.label}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-3">
+        {gens.map((g) => {
+          const text = (s as any)[g.key];
+          if (!text) return null;
+          return (
+            <div
+              key={g.key}
+              className="bg-[#0B1216]/50 rounded-lg p-3 border border-white/[0.06]"
+            >
+              <span className="text-xs font-medium text-[#CBD5E0] mb-1 block">
+                {g.label}
+              </span>
+              <p className="font-mono text-sm text-[#CBD5E0] break-all">
+                <span className="text-[#CBD5E0]">{s.prompt}</span>
+                <span className="text-[#8B95A5]">
+                  {text.slice(s.prompt.length)}
+                </span>
+              </p>
             </div>
-            <div className="flex-1">
-              <div className="text-sm font-semibold text-gray-200 mb-1">
-                {s.title}
-              </div>
-              {s.cmd && (
-                <code className="block text-xs text-bdh-accent/80 bg-gray-900/60 rounded-lg p-2 font-mono whitespace-pre-wrap">
-                  {s.cmd}
-                </code>
-              )}
-              <p className="text-[11px] text-gray-500 mt-1">{s.note}</p>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
+/* ================================================================== */
+/*  Heritage Map                                                       */
+/* ================================================================== */
+function HeritageMap({ heritage: h }: { heritage: Heritage }) {
+  const segs = 120;
+  const split = segs / 2;
+  return (
+    <motion.div
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.4 }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <AlertCircle className="w-5 h-5 text-[#8B95A5]" />
+        <h2 className="text-lg font-semibold">NEURON HERITAGE MAP</h2>
+      </div>
+      <p className="text-sm text-[#8B95A5] mb-3">
+        Each neuron traces back to exactly one specialist.{" "}
+        {h.model1_name.charAt(0).toUpperCase() + h.model1_name.slice(1)}{" "}
+        neurons: 0–{fmtN(h.ranges[h.model1_name]?.end || 0)},{" "}
+        {h.model2_name.charAt(0).toUpperCase() + h.model2_name.slice(1)}{" "}
+        neurons: {fmtN(h.ranges[h.model2_name]?.start || 0)}–
+        {fmtN(h.ranges[h.model2_name]?.end || 0)}.
+      </p>
+      <div className="flex gap-[1px] my-3" style={{ height: 24 }}>
+        {Array(segs)
+          .fill(0)
+          .map((_, i) => (
+            <div
+              key={i}
+              className={`flex-1 rounded-sm ${i < split ? "bg-[#00C896]/70" : "bg-sky-500/70"}`}
+              style={{ opacity: 0.5 + Math.random() * 0.5 }}
+            />
+          ))}
+      </div>
+      <div className="flex justify-between text-[10px] text-[#4A5568] font-mono mb-4">
+        <span>0</span>
+        <span>← {h.model1_name} →</span>
+        <span>{fmtN(h.neurons_per_head_original)}</span>
+        <span>← {h.model2_name} →</span>
+        <span>{fmtN(h.neurons_per_head_merged)}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          {
+            l: `${h.model1_name.toUpperCase()} NEURONS`,
+            v: fmtN(h.total_neurons_per_model),
+            c: "cyan",
+          },
+          {
+            l: `${h.model2_name.toUpperCase()} NEURONS`,
+            v: fmtN(h.total_neurons_per_model),
+            c: "emerald",
+          },
+          { l: "MERGED TOTAL", v: fmtN(h.total_neurons_merged), c: "purple" },
+        ].map((x, i) => (
+          <div
+            key={i}
+            className="text-center border border-white/[0.06] rounded-lg py-3"
+          >
+            <div className="text-xl font-bold text-[#E2E8F0] font-mono">
+              {x.v}
             </div>
+            <div className="text-[10px] text-[#4A5568]">{x.l}</div>
           </div>
         ))}
       </div>
@@ -816,83 +719,672 @@ function HowToRun() {
 }
 
 /* ================================================================== */
-/*  MAIN PAGE                                                          */
+/*  LIVE Heritage Probe                                                */
 /* ================================================================== */
-export function MergePage() {
-  const [data, setData] = useState<MergeData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [mergeStep, setMergeStep] = useState(0);
+function HeritageProbe({
+  heritage,
+  backendAvailable,
+}: {
+  heritage: Heritage;
+  backendAvailable: boolean;
+}) {
+  const [text, setText] = useState(
+    "Le parlement européen a adopté la résolution.",
+  );
+  const [result, setResult] = useState<ProbeResult | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [error, setError] = useState("");
 
-  // Auto-advance merge animation
-  useEffect(() => {
-    if (!data) return;
-    const timer = setInterval(() => {
-      setMergeStep((s) => (s < 3 ? s + 1 : s));
-    }, 1200);
-    return () => clearInterval(timer);
-  }, [data]);
-
-  // Load precomputed data
-  useEffect(() => {
-    fetch("/merge/merge_data.json")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((d: MergeData) => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setLoadError(err.message);
-        setLoading(false);
+  const probe = useCallback(async () => {
+    if (!text.trim()) return;
+    setProbing(true);
+    setError("");
+    try {
+      // Try fine-tuned first, fall back to merged_polyglot
+      let model = "merged_finetuned";
+      let res = await fetch(`${API}/heritage-probe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, model_name: model }),
       });
-  }, []);
+      if (!res.ok) {
+        model = "merged_polyglot";
+        res = await fetch(`${API}/heritage-probe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, model_name: model }),
+        });
+      }
+      if (!res.ok) throw new Error(await res.text());
+      setResult(await res.json());
+    } catch (e: any) {
+      setError(e.message || "Probe failed");
+    }
+    setProbing(false);
+  }, [text]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 size={36} className="animate-spin text-bdh-accent" />
-      </div>
-    );
-  }
+  const presets = [
+    {
+      label: "French",
+      text: "Le parlement européen a adopté la résolution sur le commerce.",
+    },
+    {
+      label: "Portuguese",
+      text: "O parlamento europeu adoptou a resolução sobre o comércio.",
+    },
+    {
+      label: "English",
+      text: "The European Parliament adopted the resolution on trade.",
+    },
+    { label: "Mixed", text: "Bonjour, o parlamento decidiu today." },
+  ];
+
+  const s = result?.summary;
+  const frPct = s?.french_percentage || 50;
+  const ptPct = s?.portuguese_percentage || 50;
 
   return (
-    <div className="min-h-screen p-6 md:p-8 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-6"
-      >
-        <h1 className="text-3xl font-bold mb-1">
-          <span className="gradient-text">Model Merging</span> Explorer
-        </h1>
-        <p className="text-gray-400 text-sm max-w-2xl">
-          Combine separately trained specialists into a unified polyglot model —
-          impossible with transformers, natural with BDH's modular neuron space.
-        </p>
-      </motion.div>
+    <motion.div
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.5 }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Activity className="w-5 h-5 text-[#8B95A5]" />
+        <h2 className="text-lg font-semibold">LIVE HERITAGE PROBE</h2>
+        {backendAvailable && (
+          <span className="text-[10px] bg-[#00C896]/10 text-[#00C896] border border-[#00C896]/20 px-2 py-0.5 rounded-full">
+            LIVE
+          </span>
+        )}
+      </div>
+      <p className="text-sm text-[#8B95A5] mb-4">
+        Type text and see which neurons fire — French-origin or
+        Portuguese-origin. French text should activate more French neurons.
+      </p>
 
-      {/* If no data, show instructions */}
-      {!data ? (
-        <>
-          <MergeDiagram data={null} step={mergeStep} setStep={setMergeStep} />
-          <HowToRun />
-          <InsightPanel />
-        </>
+      {!backendAvailable ? (
+        <div className="bg-white/[0.03] rounded-lg p-4 text-sm text-[#8B95A5]">
+          <Terminal className="w-4 h-4 inline mr-2" />
+          Backend required. Start with:{" "}
+          <code className="text-[#CBD5E0]">
+            python -m uvicorn backend.main:app --reload
+          </code>
+        </div>
       ) : (
         <>
-          {/* Data-driven sections */}
-          <MergeDiagram data={data} step={mergeStep} setStep={setMergeStep} />
-          <ModelCards data={data} />
-          <LossTable data={data} />
-          <SampleGenerations data={data} />
-          <HeritageMap data={data} />
-          <InsightPanel />
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {presets.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => setText(p.text)}
+                className="px-2 py-1 text-xs rounded border border-white/10 text-[#8B95A5] hover:border-white/20 transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 mb-4">
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && probe()}
+              className="flex-1 bg-[#0B1216] border border-white/10 rounded-lg px-3 py-2 text-sm text-[#E2E8F0] focus:outline-none focus:border-[#00C896]/50"
+              placeholder="Type French, Portuguese, or English..."
+            />
+            <button
+              onClick={probe}
+              disabled={probing}
+              className="px-4 py-2 bg-[#00C896]/15 border border-[#00C896]/50 rounded-lg text-[#00C896] text-sm font-medium hover:bg-[#00C896]/30 disabled:opacity-50 flex items-center gap-2"
+            >
+              {probing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}{" "}
+              Probe
+            </button>
+          </div>
+          {error && <div className="text-[#8B95A5] text-sm mb-2">{error}</div>}
+          {result && s && (
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-xs text-[#8B95A5] mb-1">
+                  <span className="text-[#CBD5E0]">
+                    French neurons: {frPct.toFixed(1)}%
+                  </span>
+                  <span className="text-[#E2E8F0]">
+                    Portuguese neurons: {ptPct.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="flex h-8 rounded-lg overflow-hidden">
+                  <motion.div
+                    className="bg-[#00C896]/70 flex items-center justify-center text-xs font-bold text-[#E2E8F0]"
+                    initial={{ width: "50%" }}
+                    animate={{ width: `${frPct}%` }}
+                    transition={{ duration: 0.5 }}
+                  >
+                    {frPct > 15 && `${frPct.toFixed(0)}%`}
+                  </motion.div>
+                  <motion.div
+                    className="bg-sky-500/70 flex items-center justify-center text-xs font-bold text-[#E2E8F0]"
+                    initial={{ width: "50%" }}
+                    animate={{ width: `${ptPct}%` }}
+                    transition={{ duration: 0.5 }}
+                  >
+                    {ptPct > 15 && `${ptPct.toFixed(0)}%`}
+                  </motion.div>
+                </div>
+                <div className="text-center mt-2 text-sm">
+                  Dominant:{" "}
+                  <span
+                    className={`font-semibold ${s.dominant_heritage === "french" ? "text-[#00C896]" : "text-[#E2E8F0]"}`}
+                  >
+                    {s.dominant_heritage.charAt(0).toUpperCase() +
+                      s.dominant_heritage.slice(1)}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                {Object.entries(result.layers).map(([idx, ld]) => {
+                  const fr = ld.french,
+                    pt = ld.portuguese;
+                  const t = fr.activation_ratio + pt.activation_ratio;
+                  const w = t > 0 ? (fr.activation_ratio / t) * 100 : 50;
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-[#0B1216]/50 rounded-lg p-2 border border-white/[0.06]"
+                    >
+                      <div className="text-[10px] text-[#4A5568] mb-1 text-center">
+                        Layer {idx}
+                      </div>
+                      <div className="flex h-3 rounded overflow-hidden mb-1">
+                        <div
+                          className="bg-[#00C896]/70"
+                          style={{ width: `${w}%` }}
+                        />
+                        <div
+                          className="bg-sky-500/70"
+                          style={{ width: `${100 - w}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[9px] text-[#4A5568]">
+                        <span>{fr.active_count}</span>
+                        <span>{pt.active_count}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </>
       )}
-    </div>
+    </motion.div>
+  );
+}
+
+/* ================================================================== */
+/*  LIVE Generation                                                    */
+/* ================================================================== */
+function LiveGeneration({ backendAvailable }: { backendAvailable: boolean }) {
+  const [prompt, setPrompt] = useState(
+    "Le commerce international est essentiel pour",
+  );
+  const [gens, setGens] = useState<Record<string, string>>({});
+  const [generating, setGenerating] = useState(false);
+
+  const go = useCallback(async () => {
+    if (!prompt.trim()) return;
+    setGenerating(true);
+    try {
+      const r = await fetch(`${API}/side-by-side`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, max_tokens: 60 }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        setGens(d.generations);
+      }
+    } catch {}
+    setGenerating(false);
+  }, [prompt]);
+
+  if (!backendAvailable) return null;
+
+  const colors: Record<string, string> = {
+    french_specialist: "cyan",
+    french: "cyan",
+    portuguese_specialist: "emerald",
+    portuguese: "emerald",
+    merged_polyglot: "amber",
+    merged: "amber",
+    merged_finetuned: "purple",
+    finetuned: "purple",
+  };
+  const labels: Record<string, string> = {
+    french_specialist: "French Specialist",
+    french: "French Specialist",
+    portuguese_specialist: "Portuguese Specialist",
+    portuguese: "Portuguese Specialist",
+    merged_polyglot: "Merged (zero-shot)",
+    merged: "Merged (zero-shot)",
+    merged_finetuned: "Merged (fine-tuned)",
+    finetuned: "Merged (fine-tuned)",
+  };
+
+  return (
+    <motion.div
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.6 }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Zap className="w-5 h-5 text-[#8B95A5]" />
+        <h2 className="text-lg font-semibold">LIVE GENERATION</h2>
+        <span className="text-[10px] bg-[#00C896]/10 text-[#00C896] border border-[#00C896]/20 px-2 py-0.5 rounded-full">
+          LIVE
+        </span>
+      </div>
+      <p className="text-sm text-[#8B95A5] mb-4">
+        Same prompt through all models. Compare specialist quality with merged
+        and fine-tuned output.
+      </p>
+      <div className="flex gap-2 mb-4">
+        <input
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && go()}
+          className="flex-1 bg-[#0B1216] border border-white/10 rounded-lg px-3 py-2 text-sm text-[#E2E8F0] focus:outline-none focus:border-[#00C896]/50"
+        />
+        <button
+          onClick={go}
+          disabled={generating}
+          className="px-4 py-2 bg-white/5 border border-white/\[0.12\] rounded-lg text-[#E2E8F0] text-sm font-medium hover:bg-white/10 disabled:opacity-50 flex items-center gap-2"
+        >
+          {generating ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Zap className="w-4 h-4" />
+          )}{" "}
+          Generate
+        </button>
+      </div>
+      {Object.keys(gens).length > 0 && (
+        <div className="space-y-2">
+          {Object.entries(gens).map(([name, text]) => {
+            const c = colors[name] || "zinc";
+            return (
+              <div
+                key={name}
+                className="bg-[#0B1216]/50 rounded-lg p-3 border border-white/[0.06]"
+              >
+                <span className="text-xs font-medium text-[#CBD5E0] mb-1 block">
+                  {labels[name] || name}
+                </span>
+                <p className="font-mono text-sm text-[#CBD5E0] break-all">
+                  <span className="text-[#CBD5E0]">{prompt}</span>
+                  <span className="text-[#8B95A5]">{text}</span>
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ================================================================== */
+/*  Fine-tune Info Panel                                               */
+/* ================================================================== */
+function FinetuneInfoPanel({ info }: { info: FinetuneInfo }) {
+  const reduction = ((1 - info.post_loss / info.pre_loss) * 100).toFixed(1);
+  return (
+    <motion.div
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.25 }}
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <TrendingDown className="w-5 h-5 text-[#8B95A5]" />
+        <h2 className="text-lg font-semibold">FINE-TUNING RESULTS</h2>
+        <span className="text-xs text-[#4A5568] ml-2">
+          POST-MERGE ADAPTATION
+        </span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        {[
+          { label: "Iterations", value: String(info.iters) },
+          {
+            label: "Learning Rate",
+            value: info.lr.toExponential(1),
+          },
+          {
+            label: "Pre-FT Loss",
+            value: info.pre_loss.toFixed(4),
+          },
+          {
+            label: "Post-FT Loss",
+            value: info.post_loss.toFixed(4),
+          },
+        ].map((item, i) => (
+          <div
+            key={i}
+            className="bg-[#0B1216]/50 rounded-lg p-3 border border-white/[0.06] text-center"
+          >
+            <div className="text-lg font-bold font-mono text-[#E2E8F0]">
+              {item.value}
+            </div>
+            <div className="text-[10px] text-[#4A5568]">{item.label}</div>
+          </div>
+        ))}
+      </div>
+      {/* Loss reduction bar */}
+      <div className="bg-[#0B1216]/50 rounded-lg p-4 border border-white/[0.06]">
+        <div className="flex justify-between text-xs text-[#8B95A5] mb-2">
+          <span>
+            Pre-finetune:{" "}
+            <span className="text-[#8B95A5] font-mono">
+              {info.pre_loss.toFixed(4)}
+            </span>
+          </span>
+          <span>
+            Post-finetune:{" "}
+            <span className="text-[#CBD5E0] font-mono">
+              {info.post_loss.toFixed(4)}
+            </span>
+          </span>
+        </div>
+        <div className="relative h-6 bg-white/5 rounded-full overflow-hidden">
+          <motion.div
+            className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#00C896]/60 to-[#00C896]/60 rounded-full"
+            initial={{ width: "100%" }}
+            animate={{ width: `${(info.post_loss / info.pre_loss) * 100}%` }}
+            transition={{ duration: 1.5, ease: "easeOut" }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-[#E2E8F0]">
+            {reduction}% reduction
+          </div>
+        </div>
+        <div className="text-center mt-2 text-xs text-[#4A5568]">
+          <Timer className="w-3 h-3 inline mr-1" />
+          {info.iters} iterations of mixed-language fine-tuning on CPU
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ================================================================== */
+/*  Precomputed Heritage Probe                                         */
+/* ================================================================== */
+function PrecomputedHeritageProbe({
+  probe,
+  heritage,
+}: {
+  probe: HeritageProbeData;
+  heritage: Heritage;
+}) {
+  const [selected, setSelected] = useState<"french_input" | "portuguese_input">(
+    "french_input",
+  );
+  const inputData = probe[selected];
+  const s = probe.summary;
+
+  const frName =
+    heritage.model1_name.charAt(0).toUpperCase() +
+    heritage.model1_name.slice(1);
+  const ptName =
+    heritage.model2_name.charAt(0).toUpperCase() +
+    heritage.model2_name.slice(1);
+
+  return (
+    <motion.div
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.45 }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Brain className="w-5 h-5 text-[#8B95A5]" />
+        <h2 className="text-lg font-semibold">HERITAGE PROBE</h2>
+        <span className="text-[10px] bg-[#00C896]/10 text-[#00C896] border border-[#00C896]/20 px-2 py-0.5 rounded-full">
+          PRECOMPUTED
+        </span>
+      </div>
+      <p className="text-sm text-[#8B95A5] mb-4">
+        Neuron activation patterns when feeding French vs Portuguese text
+        through the fine-tuned merged model. Shows which neuron bank
+        (French-origin vs Portuguese-origin) activates for each input language.
+      </p>
+
+      {/* Input selector */}
+      <div className="flex gap-2 mb-4">
+        {[
+          {
+            key: "french_input" as const,
+            label: `${frName} Input`,
+          },
+          {
+            key: "portuguese_input" as const,
+            label: `${ptName} Input`,
+          },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setSelected(tab.key)}
+            className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${
+              selected === tab.key
+                ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]"
+                : "border-white/10 text-[#4A5568] hover:border-white/20"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary bar */}
+      <div className="mb-4">
+        <div className="flex justify-between text-xs text-[#8B95A5] mb-1">
+          <span className="text-[#CBD5E0]">
+            {frName} neurons: {inputData.summary.french_percentage.toFixed(1)}%
+          </span>
+          <span className="text-[#E2E8F0]">
+            {ptName} neurons:{" "}
+            {inputData.summary.portuguese_percentage.toFixed(1)}%
+          </span>
+        </div>
+        <div className="flex h-8 rounded-lg overflow-hidden">
+          <motion.div
+            className="bg-[#00C896]/70 flex items-center justify-center text-xs font-bold text-[#E2E8F0]"
+            key={`fr-${selected}`}
+            initial={{ width: "50%" }}
+            animate={{ width: `${inputData.summary.french_percentage}%` }}
+            transition={{ duration: 0.5 }}
+          >
+            {inputData.summary.french_percentage > 15 &&
+              `${inputData.summary.french_percentage.toFixed(0)}%`}
+          </motion.div>
+          <motion.div
+            className="bg-sky-500/70 flex items-center justify-center text-xs font-bold text-[#E2E8F0]"
+            key={`pt-${selected}`}
+            initial={{ width: "50%" }}
+            animate={{ width: `${inputData.summary.portuguese_percentage}%` }}
+            transition={{ duration: 0.5 }}
+          >
+            {inputData.summary.portuguese_percentage > 15 &&
+              `${inputData.summary.portuguese_percentage.toFixed(0)}%`}
+          </motion.div>
+        </div>
+        <div className="text-center mt-1 text-sm">
+          Dominant:{" "}
+          <span
+            className={`font-semibold ${inputData.summary.dominant_heritage === heritage.model1_name ? "text-[#00C896]" : "text-[#E2E8F0]"}`}
+          >
+            {inputData.summary.dominant_heritage.charAt(0).toUpperCase() +
+              inputData.summary.dominant_heritage.slice(1)}
+          </span>
+        </div>
+      </div>
+
+      {/* Per-layer breakdown */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+        {Object.entries(inputData.layers).map(([idx, ld]) => {
+          const fr = ld.french,
+            pt = ld.portuguese;
+          const t = fr.activation_ratio + pt.activation_ratio;
+          const w = t > 0 ? (fr.activation_ratio / t) * 100 : 50;
+          return (
+            <div
+              key={idx}
+              className="bg-[#0B1216]/50 rounded-lg p-2 border border-white/[0.06]"
+            >
+              <div className="text-[10px] text-[#4A5568] mb-1 text-center">
+                Layer {idx}
+              </div>
+              <div className="flex h-3 rounded overflow-hidden mb-1">
+                <div className="bg-[#00C896]/70" style={{ width: `${w}%` }} />
+                <div
+                  className="bg-sky-500/70"
+                  style={{ width: `${100 - w}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[9px] text-[#4A5568]">
+                <span>{fr.active_count}</span>
+                <span>{pt.active_count}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Routing quality summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-[#0B1216]/50 rounded-lg p-3 border border-white/[0.06] text-center">
+          <div className="text-xs text-[#4A5568] mb-1">
+            {frName} Input → {frName} Neurons
+          </div>
+          <div
+            className={`text-lg font-bold font-mono ${s.french_input_french_pct > 55 ? "text-[#00C896]" : "text-[#8B95A5]"}`}
+          >
+            {s.french_input_french_pct.toFixed(1)}%
+          </div>
+        </div>
+        <div className="bg-[#0B1216]/50 rounded-lg p-3 border border-white/[0.06] text-center">
+          <div className="text-xs text-[#4A5568] mb-1">
+            {ptName} Input → {ptName} Neurons
+          </div>
+          <div
+            className={`text-lg font-bold font-mono ${s.portuguese_input_portuguese_pct > 55 ? "text-sky-400" : "text-[#8B95A5]"}`}
+          >
+            {s.portuguese_input_portuguese_pct.toFixed(1)}%
+          </div>
+        </div>
+        <div className="bg-[#0B1216]/50 rounded-lg p-3 border border-white/[0.06] text-center">
+          <div className="text-xs text-[#4A5568] mb-1">Routing Quality</div>
+          <div
+            className={`text-lg font-bold font-mono ${s.routing_quality > 60 ? "text-[#00C896]" : s.routing_quality > 50 ? "text-[#CBD5E0]" : "text-[#8B95A5]"}`}
+          >
+            {s.routing_quality.toFixed(1)}%
+          </div>
+          {s.clear_separation ? (
+            <div className="text-[10px] text-[#00C896] mt-1">
+              ✓ Clear language separation
+            </div>
+          ) : (
+            <div className="text-[10px] text-[#8B95A5] mt-1">
+              Both banks co-activate — shared representations emerged
+            </div>
+          )}
+        </div>
+      </div>
+
+      {!s.clear_separation && (
+        <div className="mt-3 p-3 bg-white/[0.03] rounded-lg border border-white/[0.08] text-sm text-[#8B95A5]">
+          <AlertCircle className="w-4 h-4 inline mr-1 text-[#8B95A5]" />
+          <span>
+            The fine-tuned model uses both neuron banks for both languages
+            rather than strict routing. This is expected when fine-tuning on a
+            small built-in dataset — the model learned shared representations
+            across both banks. With larger training data, more distinct routing
+            patterns may emerge.
+          </span>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ================================================================== */
+/*  Insight Panel                                                      */
+/* ================================================================== */
+function InsightPanel({ hasFT }: { hasFT: boolean }) {
+  return (
+    <motion.div
+      className="glass-card p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.7 }}
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-lg font-semibold">Why This Matters</h2>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-[#E2E8F0] font-semibold mb-2">
+            Transformers Can't Do This
+          </h3>
+          <p className="text-sm text-[#8B95A5]">
+            Transformer weights are densely interconnected. Concatenating two
+            transformer models produces garbage. Any "merging" requires
+            expensive fine-tuning, distillation, or careful weight interpolation
+            — and even then, the merged model shares all its capacity between
+            tasks.
+          </p>
+        </div>
+        <div>
+          <h3 className="text-[#00C896] font-semibold mb-2">
+            BDH Does It Naturally
+          </h3>
+          <p className="text-sm text-[#8B95A5]">
+            BDH's sparse, modular architecture means neurons operate
+            independently. Concatenating two models stacks their neuron spaces
+            perfectly.
+            {hasFT
+              ? " A brief fine-tuning step (~500 iterations) teaches the shared embeddings to route correctly to both neuron banks, restoring near-specialist quality."
+              : " The shared embedding layer can be adapted with minimal fine-tuning to route to both banks."}
+          </p>
+        </div>
+      </div>
+      {hasFT && (
+        <div className="mt-4 p-3 bg-white/[0.03] rounded-lg border border-white/[0.08] text-sm">
+          <span className="text-[#E2E8F0] font-medium">The workflow:</span>
+          <span className="text-[#CBD5E0]">
+            {" "}
+            Train specialists independently → concatenate neurons → fine-tune
+            routing (~5 min) → polyglot model. This enables{" "}
+            <b>modular AI development</b> impossible with transformers.
+          </span>
+        </div>
+      )}
+      {!hasFT && (
+        <div className="mt-4 p-3 bg-white/[0.03] rounded-lg border border-white/[0.08] text-sm">
+          <span className="text-[#E2E8F0] font-medium">Implication:</span>
+          <span className="text-[#CBD5E0]">
+            {" "}
+            Train specialists for specific tasks, merge them freely. This
+            enables <b>modular AI development</b> — a paradigm impossible with
+            current transformer architectures.
+          </span>
+        </div>
+      )}
+    </motion.div>
   );
 }

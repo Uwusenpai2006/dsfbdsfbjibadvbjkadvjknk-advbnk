@@ -8,7 +8,6 @@ import React, {
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
-  Sparkles,
   Plus,
   X,
   Loader2,
@@ -23,6 +22,7 @@ import {
   Info,
   Activity,
   BarChart2,
+  ChevronDown,
 } from "lucide-react";
 import * as d3 from "d3";
 import { analysis } from "../utils/api";
@@ -130,33 +130,33 @@ interface PrecomputedData {
 /*  Constants — presets, colors, etc.                                   */
 /* ================================================================== */
 const PRESETS = [
-  { id: "currencies", name: "Currencies", icon: "💰", color: "#f59e0b" },
-  { id: "countries", name: "Countries", icon: "🌍", color: "#06b6d4" },
-  { id: "languages", name: "Languages", icon: "🗣️", color: "#8b5cf6" },
-  { id: "politics", name: "Politics", icon: "⚖️", color: "#ef4444" },
+  { id: "currencies", name: "Currencies", color: "#34d399" },
+  { id: "countries", name: "Countries", color: "#60a5fa" },
+  { id: "languages", name: "Languages", color: "#c084fc" },
+  { id: "politics", name: "Politics", color: "#fbbf24" },
 ];
 
 const CONCEPT_COLORS: Record<string, string> = {
-  currencies: "#f59e0b",
-  countries: "#06b6d4",
-  languages: "#8b5cf6",
-  politics: "#ef4444",
+  currencies: "#34d399",
+  countries: "#60a5fa",
+  languages: "#c084fc",
+  politics: "#fbbf24",
 };
 
 const WORD_COLORS = [
-  "#818cf8",
   "#34d399",
+  "#60a5fa",
+  "#c084fc",
   "#fbbf24",
-  "#f87171",
-  "#22d3ee",
+  "#f472b6",
+  "#38bdf8",
   "#a78bfa",
   "#fb923c",
-  "#86efac",
 ];
 
-const HEAD_COLORS = ["#8b5cf6", "#f59e0b", "#06b6d4", "#ef4444"];
+const HEAD_COLORS = ["#34d399", "#60a5fa", "#c084fc", "#fbbf24"];
 
-const SYNAPSE_COLORS = ["#f59e0b", "#06b6d4", "#8b5cf6", "#ef4444", "#10b981"];
+const SYNAPSE_COLORS = ["#34d399", "#60a5fa", "#c084fc", "#fbbf24", "#f472b6"];
 
 function presetOf(id: string) {
   return PRESETS.find((p) => p.id === id);
@@ -206,57 +206,50 @@ type ViewTab =
 const VIEW_TABS: {
   id: ViewTab;
   label: string;
-  icon: React.ReactNode;
   blurb: string;
   narrative: string;
 }[] = [
   {
     id: "synapseTracking",
     label: "Synapse Tracking",
-    icon: <Activity size={14} />,
-    blurb: "σ(i,j) spikes at concept words",
+    blurb: "Watch synapses grow at concept words",
     narrative:
-      "Hebbian synapse σ(i,j) = Σ y_sparse[τ,i] · x_sparse[τ,j] tracks cross-neuron co-activation word-by-word. Concept-selective synapses show large Δσ when concept words appear and near-zero otherwise — the core evidence of monosemanticity in BDH (paper §6.3).",
+      "Each synapse σ(i,j) strengthens when two neurons fire together (Hebbian learning). If a synapse spikes at currency words but stays flat at other words, it has learned that concept.",
   },
   {
     id: "selectivity",
     label: "Selectivity",
-    icon: <BarChart2 size={14} />,
-    blurb: "Statistical proof via Mann-Whitney U",
+    blurb: "Statistical proof of specialization",
     narrative:
-      "Selectivity = mean_in / (mean_in + mean_out) measures neuron-level concept preference. Mann-Whitney U test confirms significance (p < 0.05). Note: at byte-level, neurons encode byte patterns shared across concepts — concept-level monosemanticity emerges in synapses σ(i,j), not individual neurons.",
+      "Selectivity measures how much more a neuron fires for its concept vs. everything else (1.0 = perfectly exclusive). Mann-Whitney U test confirms this isn't random (p < 0.05).",
   },
   {
     id: "similarity",
     label: "Sparse Fingerprinting",
-    icon: <BarChart3 size={14} />,
-    blurb: "Same concept → similar activation patterns",
+    blurb: "Same concept → similar activation",
     narrative:
-      "Sparse Concept Fingerprinting: words belonging to the same concept produce similar x_sparse activation patterns. High within-concept cosine similarity reflects shared byte-level features (common letters, morphology) — the foundation upon which σ-level concept encoding builds.",
+      "If the model truly encodes concepts, words from the same category should activate similar neurons. High cosine similarity between their sparse vectors confirms this.",
   },
   {
     id: "crossConcept",
     label: "Cross-Concept",
-    icon: <GitCompare size={14} />,
-    blurb: "Concept distinctness across layers",
+    blurb: "Are concepts cleanly separated?",
     narrative:
-      "Cross-concept distinctness measures how different two concepts' top-K neuron sets are (1 − Jaccard overlap). Because byte-level neurons encode sub-word features, moderate overlap is expected — concept discrimination happens at the σ-matrix level via Hebbian cross-neuron interactions.",
+      "We compare the top active neurons between different concepts. Low overlap (high distinctness) means the model uses different neurons for different ideas — a sign of structure.",
   },
   {
     id: "intersection",
     label: "Shared Neurons",
-    icon: <Eye size={14} />,
-    blurb: "Which exact neurons overlap?",
+    blurb: "Which exact neurons are shared?",
     narrative:
-      "Pick a reference word. See which neurons it shares with other same-concept words (green) vs. unique neurons (dim). Shared byte-pattern neurons (e.g. common letter sequences) form the substrate for higher-level Hebbian concept encoding.",
+      "Pick a reference word and see which of its top neurons also fire for other same-concept words (green = shared, dim = unique to that word).",
   },
   {
     id: "neuronGraph",
     label: "Neuron Graph",
-    icon: <Network size={14} />,
-    blurb: "Visualize the connectivity",
+    blurb: "Visualize neuron connectivity",
     narrative:
-      "A force-directed graph where word nodes connect to their top-K active neurons. Shared neurons glow — showing how BDH's sparse encoding creates overlapping but distinct activation neighborhoods for different words.",
+      "A force-directed graph linking words to their top neurons. Hub neurons (connected to multiple words) reveal shared concept encoding at a glance.",
   },
 ];
 
@@ -275,31 +268,31 @@ function LayerSelector({
   bestLayer: number;
 }) {
   return (
-    <div className="flex items-center gap-1 bg-gray-900/60 rounded-xl p-1 border border-gray-800/50">
-      <Layers size={14} className="text-gray-500 ml-2 mr-1" />
+    <div className="flex items-center gap-1 bg-[#0B1216]/60 rounded-xl p-1 border border-white/[0.06]">
+      <Layers size={14} className="text-[#4A5568] ml-2 mr-1" />
       {Array.from({ length: nLayers }, (_, i) => (
         <button
           key={i}
           onClick={() => onChange(i)}
           className={`relative px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all ${
             selected === i
-              ? "bg-bdh-accent text-white shadow-lg shadow-bdh-accent/30"
-              : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
+              ? "bg-[#00C896]/15 text-[#00C896]"
+              : "text-[#8B95A5] hover:text-[#E2E8F0] hover:bg-white/\[0.03\]"
           }`}
         >
           L{i}
           {i === bestLayer && (
             <Star
               size={8}
-              className="absolute -top-1 -right-1 text-yellow-400 fill-yellow-400"
+              className="absolute -top-1 -right-1 text-[#00C896] fill-[#00C896]"
             />
           )}
         </button>
       ))}
-      <span className="text-[9px] text-gray-600 ml-2 hidden sm:inline">
+      <span className="text-[9px] text-[#4A5568] ml-2 hidden sm:inline">
         <Star
           size={7}
-          className="inline text-yellow-400 fill-yellow-400 mr-0.5"
+          className="inline text-[#00C896] fill-[#00C896] mr-0.5"
         />
         = peak monosemanticity
       </span>
@@ -346,11 +339,11 @@ function NeuronStrip({
       transition={{ delay, duration: 0.3 }}
     >
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-mono text-gray-500 w-7 shrink-0 text-right">
+        <span className="text-[10px] font-mono text-[#4A5568] w-7 shrink-0 text-right">
           {label}
         </span>
         <div
-          className="flex-1 grid items-end h-9 rounded-md overflow-hidden border border-gray-800/30 px-0.5"
+          className="flex-1 grid items-end h-9 rounded-md overflow-hidden border border-white/[0.04] px-0.5"
           style={{
             gridTemplateColumns: `repeat(${sorted.length}, 1fr)`,
             gap: "1px",
@@ -399,7 +392,7 @@ function NeuronStrip({
           })}
         </div>
         {sharedCount !== null && (
-          <span className="text-[9px] font-mono text-emerald-500/70 w-10 shrink-0 text-left">
+          <span className="text-[9px] font-mono text-[#00C896]/70 w-10 shrink-0 text-left">
             {sharedCount}/{neurons.length}
           </span>
         )}
@@ -542,16 +535,15 @@ function SimilarityView({
               onClick={() => setActiveConcept(cid)}
               className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
                 isActive
-                  ? "border-bdh-accent bg-bdh-accent/15 text-bdh-accent shadow-lg shadow-bdh-accent/10"
-                  : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                  ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]"
+                  : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:border-white/\[0.12\] hover:text-[#E2E8F0]"
               }`}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              <span className="mr-1.5">{preset?.icon}</span>
               {preset?.name ?? cid}
               <span
-                className={`ml-2 text-xs font-mono ${avg > 0.6 ? "text-emerald-400" : avg > 0.4 ? "text-amber-400" : "text-gray-500"}`}
+                className={`ml-2 text-xs font-mono ${avg > 0.6 ? "text-[#00C896]" : avg > 0.4 ? "text-[#CBD5E0]" : "text-[#4A5568]"}`}
               >
                 {avg.toFixed(2)}
               </span>
@@ -568,13 +560,13 @@ function SimilarityView({
       >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <BarChart3 size={16} className="text-bdh-accent" />
+            <BarChart3 size={16} className="text-[#8B95A5]" />
             <span className="text-sm font-semibold">
               Encoder Alignment — {result.concept}
             </span>
           </div>
           <span
-            className={`text-xs font-mono font-bold ${avgSim > 0.6 ? "text-emerald-400" : avgSim > 0.4 ? "text-amber-400" : "text-gray-400"}`}
+            className={`text-xs font-mono font-bold ${avgSim > 0.6 ? "text-[#00C896]" : avgSim > 0.4 ? "text-[#CBD5E0]" : "text-[#4A5568]"}`}
           >
             avg: {avgSim.toFixed(3)}
           </span>
@@ -631,7 +623,7 @@ function SimilarityView({
         </div>
 
         <div className="flex items-center gap-2 mt-4">
-          <span className="text-[10px] text-gray-500 font-mono">
+          <span className="text-[10px] text-[#4A5568] font-mono">
             {matMin.toFixed(2)}
           </span>
           <div className="flex-1 h-3 rounded-full overflow-hidden flex">
@@ -643,20 +635,19 @@ function SimilarityView({
               />
             ))}
           </div>
-          <span className="text-[10px] text-gray-500 font-mono">
+          <span className="text-[10px] text-[#4A5568] font-mono">
             {matMax.toFixed(2)}
           </span>
         </div>
 
         {avgSim > 0.5 && (
           <motion.div
-            className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20"
+            className="mt-4 p-3 rounded-xl bg-white/\[0.03\] border border-white/\[0.06\]"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
           >
-            <p className="text-xs text-emerald-300">
-              <Sparkles size={12} className="inline mr-1" />
+            <p className="text-xs text-[#CBD5E0]">
               Avg similarity <strong>{avgSim.toFixed(3)}</strong> — words in the{" "}
               <strong>{result.concept}</strong> category activate overlapping
               neuron populations. This is <strong>monosemantic encoding</strong>{" "}
@@ -723,13 +714,13 @@ function CrossConceptView({
               onClick={() => setActivePair(i)}
               className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
                 i === activePair
-                  ? "border-bdh-accent bg-bdh-accent/15 text-bdh-accent"
-                  : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                  ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]"
+                  : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:border-white/\[0.12\] hover:text-[#E2E8F0]"
               }`}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              {pName} <span className="text-gray-600 mx-1">vs</span> {sName}
+              {pName} <span className="text-[#4A5568] mx-1">vs</span> {sName}
             </motion.button>
           );
         })}
@@ -744,26 +735,20 @@ function CrossConceptView({
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <GitCompare size={16} className="text-bdh-accent" />
+            <GitCompare size={16} className="text-[#8B95A5]" />
             <span className="text-sm font-semibold">
               Neuron Distinctness per Layer
             </span>
           </div>
           <span
-            className={`text-xs font-mono font-bold ${avgDistinctness > 0.5 ? "text-emerald-400" : avgDistinctness > 0.3 ? "text-amber-400" : "text-red-400"}`}
+            className={`text-xs font-mono font-bold ${avgDistinctness > 0.5 ? "text-[#00C896]" : avgDistinctness > 0.3 ? "text-[#CBD5E0]" : "text-[#4A5568]"}`}
           >
             avg: {avgDistinctness.toFixed(3)}
           </span>
         </div>
-        <p className="text-[10px] text-gray-600 mb-3">
-          1 − Jaccard overlap between top-neuron sets. Higher = concepts use
-          completely different neurons.{" "}
-          <span className="text-gray-500">
-            Expected range for byte-level models: 0.3–0.5 (shared byte patterns
-            like common letter sequences appear across all French text). Full
-            concept distinctness emerges in the σ-matrix, not individual
-            neurons.
-          </span>
+        <p className="text-[10px] text-[#4A5568] mb-3">
+          1 − Jaccard overlap of top-neuron sets. Higher = more distinct.
+          Expected: 0.3–0.5 for byte-level models.
         </p>
         <div className="flex items-end gap-2 h-28">
           {distinctness.map((d, i) => (
@@ -775,7 +760,7 @@ function CrossConceptView({
               transition={{ delay: i * 0.06, duration: 0.4 }}
               style={{ transformOrigin: "bottom" }}
             >
-              <span className="text-[9px] font-mono text-gray-500 mb-0.5">
+              <span className="text-[9px] font-mono text-[#4A5568] mb-0.5">
                 {d.toFixed(2)}
               </span>
               <div
@@ -799,7 +784,7 @@ function CrossConceptView({
                 }}
               />
               <span
-                className={`text-[9px] font-mono ${i === selectedLayer ? "text-bdh-accent font-bold" : "text-gray-500"}`}
+                className={`text-[9px] font-mono ${i === selectedLayer ? "text-white font-bold" : "text-[#4A5568]"}`}
               >
                 L{i}
               </span>
@@ -809,13 +794,12 @@ function CrossConceptView({
 
         {avgDistinctness > 0.65 ? (
           <motion.div
-            className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20"
+            className="mt-4 p-3 rounded-xl bg-white/\[0.03\] border border-white/\[0.06\]"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
           >
-            <p className="text-xs text-emerald-300">
-              <Sparkles size={12} className="inline mr-1" />
+            <p className="text-xs text-[#CBD5E0]">
               <strong>{(avgDistinctness * 100).toFixed(0)}%</strong> average
               distinctness — BDH dedicates <em>separate</em> neuron populations
               to each concept at the byte-pattern level.
@@ -823,19 +807,15 @@ function CrossConceptView({
           </motion.div>
         ) : avgDistinctness > 0.25 ? (
           <motion.div
-            className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/15"
+            className="mt-4 p-3 rounded-xl bg-white/\[0.03\] border border-white/\[0.06\]"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
           >
-            <p className="text-xs text-amber-300">
-              <Sparkles size={12} className="inline mr-1" />
-              <strong>{(avgDistinctness * 100).toFixed(0)}%</strong> average
-              distinctness — within expected range for byte-level models
-              (30–50%). Shared byte-pattern neurons (common French morphology)
-              cause moderate overlap. Concept-level distinctness is encoded in
-              the Hebbian σ-matrix, not individual neuron assignments (see
-              Synapse Tracking).
+            <p className="text-xs text-[#8B95A5]">
+              <strong>{(avgDistinctness * 100).toFixed(0)}%</strong>{" "}
+              distinctness — moderate overlap expected at byte-level. Full
+              separation lives in the σ-matrix.
             </p>
           </motion.div>
         ) : null}
@@ -850,22 +830,20 @@ function CrossConceptView({
         key={`sig-${activePair}-${selectedLayer}`}
       >
         <div className="flex items-center gap-2 mb-1">
-          <Zap size={14} className="text-bdh-accent" />
+          <Zap size={14} className="text-[#8B95A5]" />
           <span className="text-sm font-semibold">
             Concept Neuron Signatures — Layer {selectedLayer}
           </span>
         </div>
-        <p className="text-[10px] text-gray-600 mb-4">
-          Neurons firing for 2+ words <em>within</em> the same concept.
+        <p className="text-[10px] text-[#4A5568] mb-4">
+          Neurons firing for 2+ words in the same concept.
           {signatureOverlapCount > 0 ? (
-            <span className="text-amber-400">
+            <span className="text-[#8B95A5]">
               {" "}
-              Overlap: {signatureOverlapCount} shared neurons — expected at
-              byte-level (common French morphology). Concept separation lives in
-              the σ-matrix.
+              {signatureOverlapCount} shared neurons.
             </span>
           ) : (
-            <span className="text-emerald-400"> ✓ Completely disjoint!</span>
+            <span className="text-[#00C896]"> ✓ Disjoint!</span>
           )}
         </p>
 
@@ -890,9 +868,9 @@ function CrossConceptView({
                     className="text-xs font-bold uppercase tracking-wider"
                     style={{ color }}
                   >
-                    {preset?.icon} {preset?.name ?? label}
+                    {preset?.name ?? label}
                   </span>
-                  <span className="text-[10px] text-gray-500 ml-auto font-mono">
+                  <span className="text-[10px] text-[#4A5568] ml-auto font-mono">
                     {sig.length} signature neurons
                   </span>
                 </div>
@@ -900,12 +878,12 @@ function CrossConceptView({
                   const neurons = byHead[head] ?? [];
                   return (
                     <div key={head} className="flex items-center gap-1.5 mb-1">
-                      <span className="text-[9px] font-mono text-gray-600 w-6 shrink-0">
+                      <span className="text-[9px] font-mono text-[#4A5568] w-6 shrink-0">
                         H{head}
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {neurons.length === 0 ? (
-                          <span className="text-[8px] text-gray-700 italic">
+                          <span className="text-[8px] text-[#374151] italic">
                             none
                           </span>
                         ) : (
@@ -967,7 +945,7 @@ function CrossConceptView({
               return (
                 <motion.div
                   key={fp.word}
-                  className="rounded-xl p-4 bg-gray-900/50 border border-gray-800/50 backdrop-blur-sm"
+                  className="rounded-xl p-4 bg-[#0B1216]/50 border border-white/[0.06] backdrop-blur-sm"
                   style={{ borderLeftWidth: 3, borderLeftColor: color }}
                   initial={{
                     opacity: 0,
@@ -983,7 +961,7 @@ function CrossConceptView({
                     >
                       {fp.word}
                     </span>
-                    <span className="text-[10px] text-gray-500 font-mono">
+                    <span className="text-[10px] text-[#4A5568] font-mono">
                       {totalActive.toLocaleString()} active
                     </span>
                   </div>
@@ -1030,8 +1008,8 @@ function SynapseTrackingView({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
-        <Activity size={32} className="mx-auto text-gray-600 mb-3" />
-        <p className="text-gray-400 text-sm">
+        <Activity size={32} className="mx-auto text-[#4A5568] mb-3" />
+        <p className="text-[#8B95A5] text-sm">
           No synapse tracking data available. Run the enhanced precompute script
           to generate timeseries data.
         </p>
@@ -1113,7 +1091,7 @@ function SynapseTrackingView({
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                 activeConcept === cid
                   ? "shadow-lg"
-                  : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                  : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:border-white/\[0.12\] hover:text-[#E2E8F0]"
               }`}
               style={
                 activeConcept === cid
@@ -1125,7 +1103,7 @@ function SynapseTrackingView({
                   : undefined
               }
             >
-              {preset?.icon} {preset?.name ?? cid}
+              {preset?.name ?? cid}
             </button>
           );
         })}
@@ -1139,8 +1117,8 @@ function SynapseTrackingView({
             onClick={() => setActiveSentence(i)}
             className={`px-3 py-1.5 rounded-lg text-[11px] font-mono border transition-all max-w-xs truncate ${
               i === activeSentence
-                ? "border-bdh-accent bg-bdh-accent/10 text-bdh-accent"
-                : "border-gray-700/50 bg-gray-900/40 text-gray-500 hover:text-gray-300"
+                ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]"
+                : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#4A5568] hover:text-[#CBD5E0]"
             }`}
           >
             "{s.sentence}"
@@ -1155,18 +1133,15 @@ function SynapseTrackingView({
         animate={{ opacity: 1, y: 0 }}
       >
         <div className="flex items-center gap-2 mb-3">
-          <Activity size={14} className="text-bdh-accent" />
+          <Activity size={14} className="text-[#8B95A5]" />
           <span className="text-sm font-semibold">Tracked Synapses σ(i,j)</span>
-          <span className="text-[10px] text-gray-500 ml-auto">
+          <span className="text-[10px] text-[#4A5568] ml-auto">
             Top monosemantic synapses for{" "}
             {presetOf(activeConcept)?.name ?? activeConcept}
           </span>
         </div>
-        <p className="text-[10px] text-gray-600 mb-3">
-          Cross-neuron Hebbian outer product: σ(i,j) = Σ y_sparse[τ,i] ·
-          x_sparse[τ,j]. Each entry tracks how strongly neuron j's input
-          activation (x_sparse) co-fires with neuron i's output activation
-          (y_sparse) — the mechanism from paper §6.3, Fig 12-13.
+        <p className="text-[10px] text-[#4A5568] mb-3">
+          σ(i,j) = Σ y_sparse · x_sparse — Hebbian co-activation per word.
         </p>
         <div className="flex flex-wrap gap-3">
           {synapses.map((syn, i) => (
@@ -1193,17 +1168,17 @@ function SynapseTrackingView({
               >
                 {syn.id}
               </span>
-              <span className="text-[9px] text-gray-500">
+              <span className="text-[9px] text-[#4A5568]">
                 sel: {syn.selectivity.toFixed(2)}
               </span>
               {contrastRatios[syn.id] && contrastRatios[syn.id].ratio > 0 && (
                 <span
                   className={`text-[9px] font-mono font-bold ${
                     contrastRatios[syn.id].ratio >= 2.0
-                      ? "text-emerald-400"
+                      ? "text-[#00C896]"
                       : contrastRatios[syn.id].ratio >= 1.3
-                        ? "text-amber-400"
-                        : "text-gray-500"
+                        ? "text-[#CBD5E0]"
+                        : "text-[#4A5568]"
                   }`}
                 >
                   {contrastRatios[syn.id].ratio.toFixed(1)}×
@@ -1232,43 +1207,28 @@ function SynapseTrackingView({
           <motion.div
             className={`p-3 rounded-xl border ${
               avgRatio >= 1.5
-                ? "bg-emerald-500/10 border-emerald-500/20"
-                : "bg-gray-800/30 border-gray-700/30"
+                ? "bg-white/\[0.03\] border-white/\[0.06\]"
+                : "bg-white/\[0.02\] border-white/\[0.04\]"
             }`}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
             <p
-              className={`text-xs ${avgRatio >= 1.5 ? "text-emerald-300" : "text-gray-400"}`}
+              className={`text-xs ${avgRatio >= 1.5 ? "text-[#00C896]" : "text-[#8B95A5]"}`}
             >
-              <Sparkles size={12} className="inline mr-1" />
-              <strong>Contrast ratio</strong> = mean Δσ at concept words ÷ mean
-              Δσ at all words.
-              {avgRatio >= 1.5 ? (
+              <strong>Contrast ratio</strong>: avg{" "}
+              <strong>{avgRatio.toFixed(1)}×</strong>
+              {bestEntry && (
                 <>
                   {" "}
-                  Average <strong>{avgRatio.toFixed(1)}×</strong> across tracked
-                  synapses
-                  {bestEntry && (
-                    <>
-                      {" "}
-                      (best: <strong>{bestEntry[0]}</strong> at{" "}
-                      <strong>{bestEntry[1].ratio.toFixed(1)}×</strong>)
-                    </>
-                  )}{" "}
-                  — synapses respond{" "}
-                  {avgRatio >= 2.0 ? "strongly" : "measurably"} more to concept
-                  words than to general text.
-                </>
-              ) : (
-                <>
-                  {" "}
-                  Average <strong>{avgRatio.toFixed(1)}×</strong> — moderate
-                  concept preference. Concept-level selectivity is stronger in
-                  the σ-matrix than in individual neuron responses.
+                  (best: <strong>{bestEntry[0]}</strong> at{" "}
+                  <strong>{bestEntry[1].ratio.toFixed(1)}×</strong>)
                 </>
               )}
+              {avgRatio >= 1.5
+                ? " — strong concept selectivity."
+                : " — moderate preference."}
             </p>
           </motion.div>
         );
@@ -1280,8 +1240,8 @@ function SynapseTrackingView({
           onClick={() => setShowDelta(false)}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
             !showDelta
-              ? "border-bdh-accent bg-bdh-accent/10 text-bdh-accent"
-              : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:text-gray-200"
+              ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]"
+              : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:text-[#E2E8F0]"
           }`}
         >
           Cumulative σ (build-up)
@@ -1290,8 +1250,8 @@ function SynapseTrackingView({
           onClick={() => setShowDelta(true)}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
             showDelta
-              ? "border-bdh-accent bg-bdh-accent/10 text-bdh-accent"
-              : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:text-gray-200"
+              ? "border-[#00C896]/50 bg-[#00C896]/15 text-[#00C896]"
+              : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:text-[#E2E8F0]"
           }`}
         >
           Δσ per word (jumps)
@@ -1307,7 +1267,7 @@ function SynapseTrackingView({
         key={`${activeConcept}-${activeSentence}-${showDelta}`}
       >
         <div className="flex items-center gap-2 mb-4">
-          <Zap size={14} className="text-bdh-accent" />
+          <Zap size={14} className="text-[#8B95A5]" />
           <span className="text-sm font-semibold">
             {showDelta
               ? "Δσ per Word (Synaptic Jump)"
@@ -1326,8 +1286,8 @@ function SynapseTrackingView({
               <span
                 className={`text-[11px] font-mono leading-tight px-1 py-0.5 rounded ${
                   w.is_concept
-                    ? "text-amber-300 font-bold bg-amber-500/15 border border-amber-500/30"
-                    : "text-gray-400"
+                    ? "text-[#8B95A5] font-bold bg-amber-500/15 border border-amber-500/30"
+                    : "text-[#8B95A5]"
                 }`}
               >
                 {w.word}
@@ -1495,28 +1455,21 @@ function SynapseTrackingView({
         </div>
 
         <motion.div
-          className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/15"
+          className="mt-3 p-3 rounded-xl bg-white/\[0.03\] border border-white/\[0.06\]"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
         >
-          <p className="text-xs text-amber-300">
-            <Sparkles size={12} className="inline mr-1" />
+          <p className="text-xs text-[#8B95A5]">
             {showDelta ? (
               <>
-                <strong>Δσ</strong> shows the <strong>jump</strong> in the
-                synaptic tensor when each word is processed. Monosemantic
-                synapses show the <strong>largest</strong> Δσ at concept words
-                (highlighted), with graded response for semantically related
-                context words and minimal Δσ for function words.
+                <strong>Δσ</strong> = per-word synaptic jump. Concept words
+                (highlighted) cause the largest spikes.
               </>
             ) : (
               <>
-                <strong>Cumulative σ</strong> shows the Hebbian outer product Σ
-                y⊗x building up token-by-token. A monosemantic synapse shows its{" "}
-                <strong>steepest steps</strong> at concept words (highlighted),
-                with smaller increments at semantically related context words —
-                the graded response expected from paper §6.3.
+                <strong>Cumulative σ</strong> builds up token-by-token. Steepest
+                steps at concept words.
               </>
             )}
           </p>
@@ -1547,8 +1500,8 @@ function SelectivityView({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
-        <BarChart2 size={32} className="mx-auto text-gray-600 mb-3" />
-        <p className="text-gray-400 text-sm">
+        <BarChart2 size={32} className="mx-auto text-[#4A5568] mb-3" />
+        <p className="text-[#8B95A5] text-sm">
           No selectivity data available. Run the enhanced precompute script with
           Mann-Whitney U test support.
         </p>
@@ -1577,7 +1530,7 @@ function SelectivityView({
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                 activeConcept === cid
                   ? "shadow-lg"
-                  : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                  : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:border-white/\[0.12\] hover:text-[#E2E8F0]"
               }`}
               style={
                 activeConcept === cid
@@ -1589,7 +1542,7 @@ function SelectivityView({
                   : undefined
               }
             >
-              {preset?.icon} {preset?.name ?? cid}
+              {preset?.name ?? cid}
               <span className="ml-1.5 text-[10px] opacity-70">({nMono})</span>
             </button>
           );
@@ -1604,38 +1557,36 @@ function SelectivityView({
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <BarChart2 size={16} className="text-bdh-accent" />
+            <BarChart2 size={16} className="text-[#8B95A5]" />
             <span className="text-sm font-semibold">
               Selectivity Distribution (All Concepts)
             </span>
           </div>
-          <div className="flex items-center gap-3 text-xs text-gray-400">
+          <div className="flex items-center gap-3 text-xs text-[#8B95A5]">
             <span>
               Total:{" "}
-              <strong className="text-white">
+              <strong className="text-[#E2E8F0]">
                 {selectivity.total_neurons.toLocaleString()}
               </strong>{" "}
               neurons
             </span>
             <span>
               Selective (&gt;0.6):{" "}
-              <strong className="text-emerald-400">
+              <strong className="text-[#00C896]">
                 {selectivity.total_selective.toLocaleString()}
               </strong>
             </span>
             <span>
               Mean:{" "}
-              <strong className="text-emerald-400">
+              <strong className="text-[#00C896]">
                 {selectivity.mean_selectivity.toFixed(3)}
               </strong>
             </span>
           </div>
         </div>
-        <p className="text-[10px] text-gray-600 mb-3">
-          Selectivity = mean_in / (mean_in + mean_out). Neurons near 1.0 fire
-          exclusively for one concept's sentences. Neurons near 0.5 are
-          non-selective. At byte-level, neurons encode sub-word features — some
-          overlap across concepts is expected.
+        <p className="text-[10px] text-[#4A5568] mb-3">
+          Selectivity = mean_in / (mean_in + mean_out). Near 1.0 = exclusive.
+          Near 0.5 = non-selective.
         </p>
 
         <div className="flex items-end gap-[3px] h-32">
@@ -1653,7 +1604,7 @@ function SelectivityView({
                 style={{ transformOrigin: "bottom" }}
               >
                 {bin.count > 0 && (
-                  <span className="text-[7px] font-mono text-gray-600 mb-0.5">
+                  <span className="text-[7px] font-mono text-[#4A5568] mb-0.5">
                     {bin.count}
                   </span>
                 )}
@@ -1677,18 +1628,18 @@ function SelectivityView({
           })}
         </div>
         <div className="flex justify-between mt-1">
-          <span className="text-[9px] font-mono text-gray-600">
+          <span className="text-[9px] font-mono text-[#4A5568]">
             0.0 (non-selective)
           </span>
-          <span className="text-[9px] font-mono text-emerald-500">
+          <span className="text-[9px] font-mono text-[#00C896]">
             1.0 (exclusive)
           </span>
         </div>
 
         {/* Threshold markers */}
-        <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-500">
+        <div className="flex items-center gap-4 mt-3 text-[10px] text-[#4A5568]">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" /> ≥ 0.75
+            <span className="w-2 h-2 rounded-full bg-[#00C896]" /> ≥ 0.75
             (strong selectivity)
           </span>
           <span className="flex items-center gap-1">
@@ -1696,7 +1647,7 @@ function SelectivityView({
             (selective)
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-gray-500" /> &lt; 0.50
+            <span className="w-2 h-2 rounded-full bg-[#4A5568]" /> &lt; 0.50
             (non-selective)
           </span>
         </div>
@@ -1712,19 +1663,16 @@ function SelectivityView({
       {/* Statistical summary */}
       {significantCount > 0 && (
         <motion.div
-          className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20"
+          className="p-4 rounded-xl bg-white/\[0.03\] border border-white/\[0.06\]"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <p className="text-xs text-emerald-300">
-            <Sparkles size={12} className="inline mr-1" />
-            <strong>{significantCount}</strong> of {monoNeurons.length}{" "}
-            selective neurons pass Mann-Whitney U test (p &lt; 0.05) for{" "}
-            <strong>{presetOf(activeConcept)?.name}</strong>. These neurons fire
-            significantly more for this concept's words than for other concepts'
-            words — reflecting shared byte-level features. Full concept-level
-            monosemanticity is encoded in the σ-matrix (see Synapse Tracking).
+          <p className="text-xs text-[#CBD5E0]">
+            <strong>{significantCount}</strong> of {monoNeurons.length} neurons
+            pass Mann-Whitney U (p &lt; 0.05) for{" "}
+            <strong>{presetOf(activeConcept)?.name}</strong> — statistically
+            significant selectivity.
           </p>
         </motion.div>
       )}
@@ -1768,7 +1716,7 @@ function IntersectionView({
         animate={{ opacity: 1, y: 0 }}
       >
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">
+          <span className="text-xs text-[#8B95A5] font-semibold uppercase tracking-wider">
             Reference word:
           </span>
           {words.map((w, i) => (
@@ -1777,24 +1725,24 @@ function IntersectionView({
               onClick={() => setRefIdx(i)}
               className={`px-3 py-1.5 rounded-lg text-sm font-mono font-semibold transition-all border ${
                 i === refIdx
-                  ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400"
-                  : "bg-gray-800/50 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                  ? "bg-[#00C896]/20 border-[#00C896]/50 text-[#CBD5E0]"
+                  : "bg-white/\[0.03\] border-white/10 text-[#8B95A5] hover:border-white/\[0.12\] hover:text-[#E2E8F0]"
               }`}
             >
               {w.word}
             </button>
           ))}
         </div>
-        <p className="text-[11px] text-gray-500 mt-2">
-          <span className="inline-block w-3 h-2 rounded-[1px] bg-emerald-500/60 mr-1 align-middle" />
+        <p className="text-[11px] text-[#4A5568] mt-2">
+          <span className="inline-block w-3 h-2 rounded-[1px] bg-[#00C896]/60 mr-1 align-middle" />
           Green = shared with <strong>"{refWord.word}"</strong>
-          <span className="inline-block w-3 h-2 rounded-[1px] bg-gray-600/30 ml-3 mr-1 align-middle" />
+          <span className="inline-block w-3 h-2 rounded-[1px] bg-[#4A5568]/20 ml-3 mr-1 align-middle" />
           Dim = unique to this word
         </p>
       </motion.div>
 
       <motion.div
-        className="rounded-xl p-5 border border-emerald-500/40 bg-gradient-to-br from-emerald-950/30 to-gray-900/50 backdrop-blur-sm"
+        className="rounded-xl p-5 border border-[#00C896]/40 bg-gradient-to-br from-[#00C896]/5 to-[#0B1216]/50 backdrop-blur-sm"
         style={{ borderLeftWidth: 4, borderLeftColor: "#10b981" }}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1802,7 +1750,7 @@ function IntersectionView({
       >
         <div className="flex items-center gap-2 mb-3">
           <div
-            className="w-3 h-3 rounded-full ring-2 ring-emerald-500/30"
+            className="w-3 h-3 rounded-full ring-2 ring-[#00C896]/30"
             style={{
               backgroundColor: WORD_COLORS[refIdx % WORD_COLORS.length],
             }}
@@ -1813,7 +1761,7 @@ function IntersectionView({
           >
             "{refWord.word}"
           </span>
-          <span className="text-[10px] uppercase tracking-wider bg-emerald-500/15 text-emerald-400 font-bold px-2 py-0.5 rounded-full ml-2">
+          <span className="text-[10px] uppercase tracking-wider bg-[#00C896]/15 text-[#CBD5E0] font-bold px-2 py-0.5 rounded-full ml-2">
             REFERENCE
           </span>
         </div>
@@ -1855,7 +1803,7 @@ function IntersectionView({
           return (
             <motion.div
               key={fp.word}
-              className="rounded-xl p-4 overflow-hidden bg-gray-900/50 border border-gray-800/50 backdrop-blur-sm"
+              className="rounded-xl p-4 overflow-hidden bg-[#0B1216]/50 border border-white/[0.06] backdrop-blur-sm"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: ci * 0.08 + 0.1 }}
@@ -1874,15 +1822,15 @@ function IntersectionView({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-16 h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="w-16 h-2 bg-white/5 rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400"
+                      className="h-full rounded-full bg-gradient-to-r from-[#00C896] to-[#00C896]"
                       initial={{ width: 0 }}
                       animate={{ width: `${overlapPct}%` }}
                       transition={{ delay: ci * 0.1 + 0.3, duration: 0.5 }}
                     />
                   </div>
-                  <span className="text-xs font-bold text-emerald-400 font-mono w-10 text-right">
+                  <span className="text-xs font-bold text-[#CBD5E0] font-mono w-10 text-right">
                     {overlapPct}%
                   </span>
                 </div>
@@ -2153,7 +2101,7 @@ function NeuronGraphView({
     >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <Network size={16} className="text-bdh-accent" />
+          <Network size={16} className="text-[#8B95A5]" />
           <span className="text-sm font-semibold">
             Shared-Neuron Hub Graph — Layer {selectedLayer}
           </span>
@@ -2163,8 +2111,8 @@ function NeuronGraphView({
             onClick={() => setFilterHead(null)}
             className={`px-2 py-0.5 rounded-full border transition ${
               filterHead === null
-                ? "border-bdh-accent text-bdh-accent bg-bdh-accent/10"
-                : "border-gray-700 text-gray-500 hover:text-gray-300"
+                ? "border-white/\[0.12\] text-[#E2E8F0] bg-white/5"
+                : "border-white/10 text-[#4A5568] hover:text-[#CBD5E0]"
             }`}
           >
             All Heads
@@ -2175,8 +2123,8 @@ function NeuronGraphView({
               onClick={() => setFilterHead(filterHead === i ? null : i)}
               className={`px-2 py-0.5 rounded-full border transition ${
                 filterHead === i
-                  ? "bg-opacity-20 text-white"
-                  : "border-gray-700 text-gray-500 hover:text-gray-300"
+                  ? "bg-opacity-20 text-[#E2E8F0]"
+                  : "border-white/10 text-[#4A5568] hover:text-[#CBD5E0]"
               }`}
               style={
                 filterHead === i
@@ -2191,7 +2139,7 @@ function NeuronGraphView({
         </div>
       </div>
 
-      <div className="flex items-center gap-5 mb-3 text-[10px] text-gray-400">
+      <div className="flex items-center gap-5 mb-3 text-[10px] text-[#8B95A5]">
         <span className="flex items-center gap-1.5">
           <span
             className="inline-block w-4 h-4 rounded-md border"
@@ -2211,7 +2159,7 @@ function NeuronGraphView({
             Head {i}
           </span>
         ))}
-        <span className="ml-auto text-gray-600 font-mono">
+        <span className="ml-auto text-[#4A5568] font-mono">
           {totalShared} shared · {totalUnique} unique (hidden)
         </span>
       </div>
@@ -2408,7 +2356,7 @@ function NeuronGraphView({
 
       {tooltipNode && tooltipNode.type === "neuron" && (
         <motion.div
-          className="mt-2 p-2.5 rounded-lg bg-gray-900/90 border border-gray-700 text-xs flex items-center gap-4"
+          className="mt-2 p-2.5 rounded-lg bg-[#0B1216]/90 border border-white/10 text-xs flex items-center gap-4"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -2418,16 +2366,16 @@ function NeuronGraphView({
           >
             Head {tooltipNode.head} · Neuron {tooltipNode.label}
           </span>
-          <span className="text-gray-400">
+          <span className="text-[#8B95A5]">
             Shared by{" "}
             <span className="text-white font-semibold">
               {tooltipNode.wordCount}
             </span>{" "}
             words
           </span>
-          <span className="text-gray-500">
+          <span className="text-[#4A5568]">
             Σ activation:{" "}
-            <span className="text-gray-300 font-mono">
+            <span className="text-[#CBD5E0] font-mono">
               {tooltipNode.val?.toFixed(4)}
             </span>
           </span>
@@ -2435,12 +2383,11 @@ function NeuronGraphView({
       )}
 
       <div className="flex items-center justify-between mt-3">
-        <p className="text-xs text-gray-500">
-          <span className="text-bdh-accent font-semibold">Hub neurons</span>{" "}
-          fire for 2+ words — evidence of shared concept encoding. Hover any
-          node to trace connections.
+        <p className="text-xs text-[#4A5568]">
+          <span className="text-white font-semibold">Hub neurons</span> fire for
+          2+ words — shared concept encoding. Hover to trace.
         </p>
-        <span className="text-[10px] text-gray-600 font-mono">
+        <span className="text-[10px] text-[#4A5568] font-mono">
           {nodes.filter((n) => n.type === "neuron").length} hubs ·{" "}
           {edges.length} links
         </span>
@@ -2470,8 +2417,8 @@ function MonosemanticNeuronPanel({
         transition={{ delay: 0.2 }}
       >
         <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-gray-600" />
-          <span className="text-sm text-gray-500">
+          {" "}
+          <span className="text-sm text-[#4A5568]">
             No monosemantic neurons found for this concept (selectivity &gt;
             0.5)
           </span>
@@ -2488,29 +2435,22 @@ function MonosemanticNeuronPanel({
       transition={{ delay: 0.2 }}
     >
       <div className="flex items-center gap-2 mb-1">
-        <Sparkles size={16} className="text-bdh-accent" />
+        {" "}
         <span className="text-sm font-semibold">Monosemantic Neurons</span>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-bdh-accent/20 text-bdh-accent font-mono">
+        <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-[#CBD5E0] font-mono">
           {neurons.length} found
         </span>
       </div>
-      <p className="text-xs text-gray-500 mb-3">
-        Neurons that fire selectively for{" "}
-        <span className="text-white font-semibold">{conceptName}</span>{" "}
-        sentences vs. other concepts' sentences. Selectivity = mean_in /
-        (mean_in + mean_out) — 1.0 = perfectly exclusive. p-value from
-        Mann-Whitney U test.{" "}
-        <span className="text-gray-600">
-          Per-word values show activation at exact byte positions of each word.
-          At byte-level, neurons often fire for surrounding context rather than
-          the target word's bytes — low per-word values with high overall
-          mean_in indicates context-driven selectivity.
-        </span>
+      <p className="text-xs text-[#4A5568] mb-3">
+        Selective neurons for{" "}
+        <span className="text-white font-semibold">{conceptName}</span>.
+        Selectivity = mean_in / (mean_in + mean_out). p-value via Mann-Whitney
+        U.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-gray-500 border-b border-gray-800">
+            <tr className="text-[#4A5568] border-b border-white/[0.06]">
               <th className="text-left py-2 px-2">Location</th>
               <th className="text-right py-2 px-2">Selectivity</th>
               <th className="text-right py-2 px-2">In</th>
@@ -2532,47 +2472,47 @@ function MonosemanticNeuronPanel({
             {neurons.slice(0, 20).map((n, i) => (
               <motion.tr
                 key={`${n.layer}-${n.head}-${n.neuron}`}
-                className="border-b border-gray-800/50 hover:bg-gray-800/30"
+                className="border-b border-white/[0.06] hover:bg-white/\[0.02\]"
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.03 }}
               >
                 <td className="py-2 px-2 font-mono">
-                  <span className="text-gray-500">L{n.layer}_</span>
+                  <span className="text-[#4A5568]">L{n.layer}_</span>
                   <span
                     style={{ color: HEAD_COLORS[n.head % HEAD_COLORS.length] }}
                   >
                     H{n.head}
                   </span>
-                  <span className="text-gray-500">_N{n.neuron}</span>
+                  <span className="text-[#4A5568]">_N{n.neuron}</span>
                 </td>
                 <td className="py-2 px-2 text-right font-mono font-bold">
                   <span
                     className={
                       n.selectivity >= 0.9
-                        ? "text-emerald-400"
+                        ? "text-[#00C896]"
                         : n.selectivity >= 0.75
-                          ? "text-amber-400"
-                          : "text-gray-300"
+                          ? "text-[#00C896]/70"
+                          : "text-[#CBD5E0]"
                     }
                   >
                     {n.selectivity.toFixed(3)}
                   </span>
                 </td>
-                <td className="py-2 px-2 text-right font-mono text-emerald-400/70">
+                <td className="py-2 px-2 text-right font-mono text-[#CBD5E0]/70">
                   {n.mean_in.toFixed(3)}
                 </td>
-                <td className="py-2 px-2 text-right font-mono text-red-400/70">
+                <td className="py-2 px-2 text-right font-mono text-[#8B95A5]/70">
                   {n.mean_out.toFixed(3)}
                 </td>
                 <td className="py-2 px-2 text-right font-mono">
                   <span
                     className={
                       n.p_value < 0.001
-                        ? "text-emerald-400"
+                        ? "text-[#00C896]"
                         : n.p_value < 0.05
-                          ? "text-amber-400"
-                          : "text-gray-500"
+                          ? "text-[#00C896]/70"
+                          : "text-[#4A5568]"
                     }
                   >
                     {n.p_value < 0.001 ? "<0.001" : n.p_value.toFixed(3)}
@@ -2591,21 +2531,21 @@ function MonosemanticNeuronPanel({
                   </td>
                 ))}
                 <td className="py-2 px-2">
-                  <div className="w-24 h-3 bg-gray-800 rounded-full overflow-hidden relative">
+                  <div className="w-24 h-3 bg-white/5 rounded-full overflow-hidden relative">
                     <motion.div
                       className={`h-full rounded-full ${
                         n.selectivity >= 0.9
-                          ? "bg-gradient-to-r from-emerald-500 to-emerald-300"
+                          ? "bg-gradient-to-r from-[#00C896] to-[#00C896]"
                           : n.selectivity >= 0.75
                             ? "bg-gradient-to-r from-amber-500 to-amber-300"
-                            : "bg-gradient-to-r from-bdh-accent to-violet-300"
+                            : "bg-[#4A5568]"
                       }`}
                       initial={{ width: 0 }}
                       animate={{ width: `${n.selectivity * 100}%` }}
                       transition={{ delay: i * 0.04, duration: 0.5 }}
                     />
                     <div
-                      className="absolute top-0 bottom-0 w-px bg-gray-600"
+                      className="absolute top-0 bottom-0 w-px bg-[#4A5568]"
                       style={{ left: "50%" }}
                       title="Chance level (0.50)"
                     />
@@ -2616,16 +2556,16 @@ function MonosemanticNeuronPanel({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
+      <div className="flex items-center gap-4 mt-3 text-[10px] text-[#4A5568]">
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-emerald-400" /> ≥ 0.9
+          <span className="w-2 h-2 rounded-full bg-[#00C896]" /> ≥ 0.9
           (exclusive)
         </span>
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-amber-400" /> ≥ 0.75 (strong)
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-bdh-accent" /> ≥ 0.5
+          <span className="w-2 h-2 rounded-full bg-[#4A5568]" /> ≥ 0.5
           (selective)
         </span>
         <span className="ml-auto">Vertical line = chance (0.50)</span>
@@ -2655,15 +2595,15 @@ class TryItErrorBoundary extends React.Component<
       return (
         <div className="glass-card p-5">
           <div className="flex items-center gap-2 mb-3">
-            <Search size={16} className="text-red-400" />
-            <span className="text-sm font-semibold text-red-400">
+            <Search size={16} className="text-[#8B95A5]" />
+            <span className="text-sm font-semibold text-[#8B95A5]">
               Try It Yourself — Error
             </span>
           </div>
-          <p className="text-sm text-red-400/80 mb-3">
+          <p className="text-sm text-[#8B95A5]/80 mb-3">
             Something went wrong rendering the probe results.
           </p>
-          <p className="text-xs text-gray-500 font-mono mb-3">
+          <p className="text-xs text-[#4A5568] font-mono mb-3">
             {this.state.errorMsg}
           </p>
           <button
@@ -2719,10 +2659,14 @@ function TryItYourself({
       }
       setLiveResult(data);
     } catch (err: any) {
+      const raw = err.response?.data?.detail;
       const msg =
-        err.response?.data?.detail ||
-        err.message ||
-        "Backend offline — start the server to use live probing";
+        typeof raw === "string"
+          ? raw
+          : Array.isArray(raw)
+            ? raw.map((e: any) => e.msg ?? JSON.stringify(e)).join("; ")
+            : err.message ||
+              "Backend offline — start the server to use live probing";
       setError(msg);
       setLiveResult(null);
     } finally {
@@ -2831,17 +2775,17 @@ function TryItYourself({
       transition={{ delay: 0.2 }}
     >
       <div className="flex items-center gap-2 mb-3">
-        <Search size={16} className="text-bdh-accent" />
+        <Search size={16} className="text-[#8B95A5]" />
         <span className="text-sm font-semibold">Try It Yourself</span>
-        <span className="text-[10px] text-gray-500 ml-2">
+        <span className="text-[10px] text-[#4A5568] ml-2">
           Probe the model with your own words
         </span>
-        <span className="text-[10px] text-gray-600 ml-auto">
+        <span className="text-[10px] text-[#4A5568] ml-auto">
           Requires backend server running
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-3 p-3 rounded-xl border border-gray-700/50 bg-gray-900/40">
+      <div className="flex flex-wrap items-center gap-2 mb-3 p-3 rounded-xl border border-white/\[0.06\] bg-[#0B1216]/60">
         {words.map((w) => (
           <span
             key={w}
@@ -2866,12 +2810,12 @@ function TryItYourself({
               removeWord(words[words.length - 1]);
           }}
           placeholder='Type a word (e.g. "pound", "japon")…'
-          className="flex-1 min-w-[140px] bg-transparent outline-none text-sm text-gray-200 placeholder-gray-600"
+          className="flex-1 min-w-[140px] bg-transparent outline-none text-sm text-[#E2E8F0] placeholder-[#4A5568]"
         />
         <button
           onClick={addWord}
           disabled={!input.trim()}
-          className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white disabled:opacity-30 transition-all"
+          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[#8B95A5] hover:text-[#E2E8F0] disabled:opacity-30 transition-all"
         >
           <Plus size={16} />
         </button>
@@ -2892,7 +2836,7 @@ function TryItYourself({
 
       {error && (
         <motion.p
-          className="text-sm text-red-400 mb-3"
+          className="text-sm text-[#8B95A5] mb-3"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
@@ -2908,20 +2852,19 @@ function TryItYourself({
         >
           {liveSharedNeurons && (
             <motion.div
-              className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/15"
+              className="p-3 rounded-xl bg-[#00C896]/5 border border-[#00C896]/15"
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
             >
               <p className="text-xs">
-                <Sparkles size={12} className="inline mr-1 text-emerald-400" />
-                <span className="text-emerald-400 font-semibold">
+                <span className="text-[#CBD5E0] font-semibold">
                   {totalSharedCount} shared neuron
                   {totalSharedCount !== 1 ? "s" : ""}
                 </span>
-                <span className="text-gray-500">
+                <span className="text-[#4A5568]">
                   {" "}
                   found across {liveResult.words.length} words —{" "}
-                  <span className="text-emerald-500/70">green bars</span> =
+                  <span className="text-[#00C896]/70">green bars</span> =
                   neurons that fire for multiple words
                 </span>
               </p>
@@ -2935,7 +2878,7 @@ function TryItYourself({
             return (
               <motion.div
                 key={fp.word}
-                className="rounded-xl p-4 bg-gray-900/50 border border-gray-800/50 backdrop-blur-sm"
+                className="rounded-xl p-4 bg-[#0B1216]/50 border border-white/[0.06] backdrop-blur-sm"
                 style={{ borderLeftWidth: 3, borderLeftColor: "#22d3ee" }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -2944,7 +2887,7 @@ function TryItYourself({
                   <span className="text-sm font-mono font-bold text-cyan-400">
                     "{fp.word}"
                   </span>
-                  <span className="text-[10px] text-gray-600 font-mono">
+                  <span className="text-[10px] text-[#4A5568] font-mono">
                     {layer.heads
                       .reduce((s, h) => s + h.x_active, 0)
                       .toLocaleString()}{" "}
@@ -2977,7 +2920,7 @@ function TryItYourself({
                 <div className="space-y-3 mt-4">
                   <div className="flex items-center gap-2">
                     <Zap size={13} className="text-cyan-400" />
-                    <span className="text-xs text-gray-300 font-semibold uppercase tracking-wider">
+                    <span className="text-xs text-[#CBD5E0] font-semibold uppercase tracking-wider">
                       Category Affinity
                     </span>
                   </div>
@@ -2991,7 +2934,7 @@ function TryItYourself({
                         key={co.concept}
                         className={`flex items-center gap-3 p-2 rounded-lg transition-all ${
                           isTop
-                            ? "bg-gray-800/40 border border-gray-700/40"
+                            ? "bg-white/[0.04] border border-white/[0.06]"
                             : ""
                         }`}
                         initial={{ opacity: 0, x: -10 }}
@@ -3007,10 +2950,10 @@ function TryItYourself({
                             className="text-xs font-semibold"
                             style={{ color }}
                           >
-                            {preset?.icon} {preset?.name}
+                            {preset?.name}
                           </span>
                         </div>
-                        <div className="flex-1 h-4 bg-gray-800/60 rounded-full overflow-hidden">
+                        <div className="flex-1 h-4 bg-white/[0.05] rounded-full overflow-hidden">
                           <motion.div
                             className="h-full rounded-full"
                             style={{
@@ -3023,7 +2966,7 @@ function TryItYourself({
                         </div>
                         <span
                           className={`text-xs font-mono w-14 text-right ${
-                            isTop ? "font-bold" : "text-gray-500"
+                            isTop ? "font-bold" : "text-[#4A5568]"
                           }`}
                           style={isTop ? { color } : undefined}
                         >
@@ -3035,12 +2978,11 @@ function TryItYourself({
                   {categoryOverlap[0] &&
                     categoryOverlap[0].similarity > 0.05 && (
                       <motion.p
-                        className="text-xs text-emerald-300 mt-2"
+                        className="text-xs text-[#CBD5E0] mt-2"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.5 }}
                       >
-                        <Sparkles size={12} className="inline mr-1" />
                         Highest similarity with{" "}
                         <strong>
                           {PRESETS.find(
@@ -3093,14 +3035,19 @@ export function MonosemanticityPage() {
 
   if (loadingData) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "#070D12" }}
+      >
         <motion.div
           className="flex flex-col items-center gap-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
-          <Loader2 size={40} className="animate-spin text-bdh-accent" />
-          <p className="text-gray-400 text-sm">Loading monosemanticity data…</p>
+          <Loader2 size={40} className="animate-spin text-[#00C896]" />
+          <p className="text-[#8B95A5] text-sm">
+            Loading monosemanticity data…
+          </p>
         </motion.div>
       </div>
     );
@@ -3108,9 +3055,12 @@ export function MonosemanticityPage() {
 
   if (loadError || !precomputed) {
     return (
-      <div className="min-h-screen p-6 md:p-8 max-w-[1600px] mx-auto">
+      <div
+        className="min-h-screen p-6 md:p-8 max-w-[1600px] mx-auto"
+        style={{ background: "#070D12" }}
+      >
         <motion.div
-          className="flex flex-col items-center justify-center py-20 text-gray-600"
+          className="flex flex-col items-center justify-center py-20 text-[#4A5568]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
@@ -3118,15 +3068,15 @@ export function MonosemanticityPage() {
           <p className="text-lg font-medium mb-2">
             Pre-computed data not found
           </p>
-          <p className="text-sm text-gray-500 text-center max-w-md">
+          <p className="text-sm text-[#4A5568] text-center max-w-md">
             Run{" "}
-            <code className="px-2 py-1 bg-gray-800 rounded text-xs font-mono text-bdh-accent">
+            <code className="px-2 py-1 bg-white/5 rounded text-xs font-mono text-[#CBD5E0]">
               python scripts/precompute_monosemanticity.py
             </code>{" "}
             to generate the visualization data, then refresh this page.
           </p>
           {loadError && (
-            <p className="text-xs text-red-400/60 mt-4 font-mono">
+            <p className="text-xs text-[#8B95A5]/60 mt-4 font-mono">
               {loadError}
             </p>
           )}
@@ -3138,7 +3088,10 @@ export function MonosemanticityPage() {
   const currentTab = VIEW_TABS.find((t) => t.id === viewTab)!;
 
   return (
-    <div className="min-h-screen p-6 md:p-8 max-w-[1600px] mx-auto">
+    <div
+      className="min-h-screen p-6 md:p-8 max-w-[1600px] mx-auto"
+      style={{ background: "#070D12" }}
+    >
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -3148,13 +3101,10 @@ export function MonosemanticityPage() {
         <h1 className="text-3xl font-bold mb-1">
           <span className="gradient-text">Monosemanticity</span> Explorer
         </h1>
-        <p className="text-gray-400 text-sm max-w-2xl">
-          BDH produces{" "}
-          <span className="text-white font-medium">monosemantic synapses</span>{" "}
-          through Hebbian learning. The σ(i,j) matrix — the outer product of
-          y_sparse × x_sparse — selectively strengthens when the model processes
-          concept-related words. Six views reveal this — from σ-matrix tracking
-          to sparse fingerprinting to statistical selectivity.
+        <p className="text-[#4A5568] text-sm">
+          Do individual neurons specialize for specific concepts? These six
+          views test whether BDH's Hebbian synapses (σ) create meaningful,
+          interpretable structure.
         </p>
       </motion.div>
 
@@ -3167,40 +3117,32 @@ export function MonosemanticityPage() {
           bestLayer={bestLayer}
         />
 
-        <div className="flex gap-1 bg-gray-900/60 rounded-xl p-1 border border-gray-800/50 flex-wrap">
+        <div className="flex gap-1 bg-[#0B1216]/60 rounded-xl p-1 border border-white/[0.06] flex-wrap">
           {VIEW_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setViewTab(tab.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                 viewTab === tab.id
-                  ? "bg-bdh-accent text-white shadow-lg shadow-bdh-accent/20"
-                  : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/40"
+                  ? "bg-[#00C896]/15 text-[#00C896]"
+                  : "text-[#8B95A5] hover:text-[#E2E8F0] hover:bg-white/[0.04]"
               }`}
             >
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
+              <span>{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Narrative step */}
+      {/* Narrative step — compact */}
       <motion.div
-        className="mb-5 flex items-start gap-3 p-3 rounded-xl bg-gray-900/30 border border-gray-800/30"
+        className="mb-5 flex items-center gap-2.5 px-3 py-2 rounded-lg bg-[#0B1216] border border-white/[0.04]"
         key={viewTab}
-        initial={{ opacity: 0, y: -5 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
       >
-        <Info size={14} className="text-bdh-accent mt-0.5 shrink-0" />
-        <div>
-          <span className="text-[10px] text-bdh-accent font-bold uppercase tracking-wider">
-            Step {VIEW_TABS.findIndex((t) => t.id === viewTab) + 1} of{" "}
-            {VIEW_TABS.length}
-          </span>
-          <span className="text-gray-600 mx-2">·</span>
-          <span className="text-xs text-gray-400">{currentTab.narrative}</span>
-        </div>
+        <Info size={13} className="text-[#8B95A5] shrink-0" />
+        <span className="text-xs text-[#8B95A5]">{currentTab.narrative}</span>
       </motion.div>
 
       {/* Active view */}
@@ -3287,7 +3229,7 @@ export function MonosemanticityPage() {
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                         intersectionConcept === cid
                           ? "shadow-lg"
-                          : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                          : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:border-white/\[0.12\] hover:text-[#E2E8F0]"
                       }`}
                       style={
                         intersectionConcept === cid
@@ -3329,7 +3271,7 @@ export function MonosemanticityPage() {
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                         activeConcept === cid
                           ? "shadow-lg"
-                          : "border-gray-700/50 bg-gray-900/40 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                          : "border-white/\[0.06\] bg-[#0B1216]/60 text-[#8B95A5] hover:border-white/\[0.12\] hover:text-[#E2E8F0]"
                       }`}
                       style={
                         activeConcept === cid
@@ -3371,53 +3313,44 @@ export function MonosemanticityPage() {
           );
         })()}
 
-      {/* Insight banner */}
-      <motion.div
-        className="mt-6 glass-card p-5"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-      >
-        <h3 className="text-sm font-bold mb-2 flex items-center gap-2">
-          <Sparkles size={14} className="text-bdh-accent" />
-          What You're Seeing — Hebbian Monosemantic Synapses
-        </h3>
-        <p className="text-gray-400 text-xs leading-relaxed">
-          BDH's monosemanticity operates at two levels. Individual neurons in{" "}
-          <span className="text-amber-400 font-semibold">
-            x_sparse = ReLU(input × Encoder)
-          </span>{" "}
-          encode byte-level features — sub-word patterns shared across concepts.
-          This is expected for a byte-level model. The key insight from the BDH
-          paper (§6.3) is that{" "}
-          <span className="text-cyan-400 font-semibold">
-            Hebbian synapses σ(i,j) = Σ y·x
-          </span>{" "}
-          selectively strengthen for specific concepts during inference. The{" "}
-          <span className="text-cyan-400 font-semibold">Synapse Tracking</span>{" "}
-          view shows this directly: σ spikes at concept words and stays flat
-          elsewhere. The{" "}
-          <span className="text-emerald-400 font-semibold">Selectivity</span>{" "}
-          view provides statistical evidence at the neuron level, while{" "}
-          <span className="text-amber-400 font-semibold">
-            Sparse Fingerprinting
-          </span>{" "}
-          shows how within-concept similarity provides the foundation. Across{" "}
-          <span className="text-white font-medium">
-            {precomputed.model_info.n_neurons.toLocaleString()} neurons per head
-          </span>
-          , this two-level architecture — sparse neurons + Hebbian synapses — is
-          what makes BDH interpretable by design.
-        </p>
-      </motion.div>
+      {/* Insight — collapsible */}
+      <details className="mt-6 glass-card group">
+        <summary className="p-4 cursor-pointer flex items-center gap-2 text-sm font-semibold text-[#CBD5E0] select-none">
+          {" "}
+          How It Works — Hebbian Monosemantic Synapses
+          <ChevronDown
+            size={14}
+            className="ml-auto text-[#4A5568] transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div className="px-4 pb-4 text-[#8B95A5] text-xs leading-relaxed space-y-2">
+          <p>
+            <span className="text-[#8B95A5] font-medium">Neurons</span>{" "}
+            (x_sparse) encode byte-level features — sub-word patterns shared
+            across concepts.{" "}
+            <span className="text-cyan-400 font-medium">Hebbian synapses</span>{" "}
+            σ(i,j) = Σ y·x then strengthen selectively for specific concepts
+            during inference.
+          </p>
+          <p>
+            <strong className="text-[#CBD5E0]">Synapse Tracking</strong> shows σ
+            spiking at concept words.{" "}
+            <strong className="text-[#CBD5E0]">Selectivity</strong> provides
+            statistical evidence.{" "}
+            <strong className="text-[#CBD5E0]">Sparse Fingerprinting</strong>{" "}
+            shows within-concept similarity. Together: sparse neurons + Hebbian
+            synapses = interpretable by design.
+          </p>
+        </div>
+      </details>
 
       {/* Divider */}
       <div className="relative my-10">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-800/50" />
+          <div className="w-full border-t border-white/[0.06]" />
         </div>
         <div className="relative flex justify-center">
-          <span className="px-4 py-1 bg-gray-950 text-[10px] text-gray-500 uppercase tracking-wider rounded-full border border-gray-800/50">
+          <span className="px-4 py-1 bg-[#070D12] text-[10px] text-[#4A5568] uppercase tracking-wider rounded-full border border-white/[0.06]">
             Live Exploration
           </span>
         </div>

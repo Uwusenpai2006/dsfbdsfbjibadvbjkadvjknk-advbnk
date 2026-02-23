@@ -78,7 +78,7 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
 
         <div className="flex items-center gap-2">
           {isServerOnline === null ? (
-            <span className="text-gray-500 text-sm flex items-center gap-1">
+            <span className="text-[#4A5568] text-sm flex items-center gap-1">
               <Loader2 size={14} className="animate-spin" />
               Checking...
             </span>
@@ -107,7 +107,7 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
             <AlertCircle size={16} />
             Backend server not running. Start it with:
           </p>
-          <code className="block mt-2 p-2 bg-gray-900 rounded text-xs text-gray-300">
+          <code className="block mt-2 p-2 bg-[#0B1216] rounded text-xs text-[#CBD5E0]">
             python backend/live_server.py --model
             checkpoints/french/french_best.pt
           </code>
@@ -160,30 +160,30 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
           animate={{ opacity: 1, y: 0 }}
           className="mt-4 grid grid-cols-3 gap-4"
         >
-          <div className="p-3 bg-gray-800/50 rounded-lg text-center">
+          <div className="p-3 bg-white/[0.03] rounded-lg text-center">
             <div className="text-2xl font-bold text-bdh-accent">
               {(lastResult.overall_sparsity * 100).toFixed(1)}%
             </div>
-            <div className="text-xs text-gray-400">Sparsity</div>
+            <div className="text-xs text-[#8B95A5]">Sparsity</div>
           </div>
-          <div className="p-3 bg-gray-800/50 rounded-lg text-center">
+          <div className="p-3 bg-white/[0.03] rounded-lg text-center">
             <div className="text-2xl font-bold text-blue-400">
               {lastResult.input_tokens.length}
             </div>
-            <div className="text-xs text-gray-400">Tokens</div>
+            <div className="text-xs text-[#8B95A5]">Tokens</div>
           </div>
-          <div className="p-3 bg-gray-800/50 rounded-lg text-center">
+          <div className="p-3 bg-white/[0.03] rounded-lg text-center">
             <div className="text-2xl font-bold text-green-400">
               {lastResult.frames.length}
             </div>
-            <div className="text-xs text-gray-400">Frames</div>
+            <div className="text-xs text-[#8B95A5]">Frames</div>
           </div>
         </motion.div>
       )}
 
       {/* Example prompts */}
       <div className="mt-4">
-        <p className="text-xs text-gray-500 mb-2">Try these examples:</p>
+        <p className="text-xs text-[#4A5568] mb-2">Try these examples:</p>
         <div className="flex flex-wrap gap-2">
           {[
             "The European Parliament",
@@ -194,7 +194,7 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
             <button
               key={example}
               onClick={() => setInputText(example)}
-              className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-gray-200 transition-colors"
+              className="px-2 py-1 text-xs bg-white/5 hover:bg-white/10 rounded text-[#8B95A5] hover:text-[#E2E8F0] transition-colors"
             >
               {example}
             </button>

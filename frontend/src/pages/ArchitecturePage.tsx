@@ -214,7 +214,7 @@ export function ArchitecturePage() {
   };
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-8" style={{ background: '#070D12' }}>
       {/* Loading overlay */}
       <AnimatePresence>
         {isLoading && (
@@ -222,17 +222,18 @@ export function ArchitecturePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
+            style={{ background: 'rgba(7,13,18,0.85)' }}
           >
             <div className="flex flex-col items-center gap-4 max-w-md text-center">
               <div className="relative w-16 h-16">
-                <div className="absolute inset-0 rounded-full border-4 border-gray-700" />
-                <div className="absolute inset-0 rounded-full border-4 border-t-bdh-accent border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+                <div className="absolute inset-0 rounded-full border-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+                <div className="absolute inset-0 rounded-full border-4 border-t-[#00C896] border-r-transparent border-b-transparent border-l-transparent animate-spin" />
               </div>
-              <p className="text-gray-300 text-sm font-medium">
+              <p className="text-[#E2E8F0] text-sm font-medium">
                 {loadingMessage || "Running inference on model..."}
               </p>
-              <p className="text-gray-500 text-xs">
+              <p className="text-[#6B7280] text-xs">
                 The model processes each token through 8 layers with full
                 activation extraction. This typically takes 10-30 seconds.
               </p>
@@ -270,7 +271,7 @@ export function ArchitecturePage() {
           <span className="px-2 py-1 rounded text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/50">
             Live API
           </span>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[#4A5568]">
             Real model inference — {playbackData.frames.length} frames extracted
           </span>
         </div>
@@ -278,14 +279,15 @@ export function ArchitecturePage() {
 
       {/* Header */}
       <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, y: -20, filter: 'blur(4px)' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ type: 'spring', stiffness: 120, damping: 18, mass: 0.9 }}
         className="mb-8"
       >
-        <h1 className="text-3xl font-bold mb-2">
-          Interactive <span className="gradient-text">Architecture</span>
+        <h1 className="text-3xl font-bold mb-2 text-[#E2E8F0]">
+          Interactive <span className="text-[#00C896]">Architecture</span>
         </h1>
-        <p className="text-gray-400">
+        <p className="text-[#8B95A5]">
           Explore BDH's data flow with animated visualizations. Watch how ~95%
           of paths go dark at the ReLU — that's sparsity in action.
         </p>
@@ -333,13 +335,17 @@ export function ArchitecturePage() {
                 <motion.span
                   key={idx}
                   onClick={() => handleTokenClick(idx)}
-                  className={`px-2 py-1 rounded font-mono text-sm cursor-pointer transition-all hover:ring-2 hover:ring-bdh-accent/50 ${
+                  className={`px-2 py-1 rounded font-mono text-sm cursor-pointer transition-all hover:ring-2 hover:ring-[#00C896]/40 ${
                     currentTokenIdx === idx
-                      ? "bg-bdh-accent text-white shadow-lg shadow-bdh-accent/30"
+                      ? "text-[#070D12] font-semibold"
                       : idx < currentTokenIdx
-                        ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                        : "bg-gray-800 text-gray-500 hover:bg-gray-700"
+                        ? "text-[#8B95A5]"
+                        : "text-[#4A5568]"
                   }`}
+                  style={{
+                    background: currentTokenIdx === idx ? '#00C896' : idx < currentTokenIdx ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                    boxShadow: currentTokenIdx === idx ? '0 0 16px rgba(0,200,150,0.3)' : 'none',
+                  }}
                   initial={{ scale: 0.8 }}
                   animate={{ scale: 1 }}
                   whileHover={{ scale: 1.1 }}
@@ -356,21 +362,24 @@ export function ArchitecturePage() {
               <button
                 onClick={handlePrevToken}
                 disabled={currentTokenIdx === 0}
-                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors disabled:opacity-30"
+                className="p-2 rounded-lg transition-all duration-200 disabled:opacity-30 hover:scale-105"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}
                 title="Previous token"
               >
                 <SkipBack size={18} />
               </button>
               <button
                 onClick={handlePlayPause}
-                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+                className="p-2 rounded-lg transition-all duration-200 hover:scale-105"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}
                 title={isPlaying ? "Pause" : "Play (step-by-step)"}
               >
                 {isPlaying ? <Pause size={20} /> : <Play size={20} />}
               </button>
               <button
                 onClick={handleNextStep}
-                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+                className="p-2 rounded-lg transition-all duration-200 hover:scale-105"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}
                 title="Next step"
               >
                 <ChevronRight size={20} />
@@ -378,14 +387,16 @@ export function ArchitecturePage() {
               <button
                 onClick={handleNextToken}
                 disabled={currentTokenIdx >= numTokens - 1}
-                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors disabled:opacity-30"
+                className="p-2 rounded-lg transition-all duration-200 disabled:opacity-30 hover:scale-105"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}
                 title="Next token"
               >
                 <SkipForward size={18} />
               </button>
               <button
                 onClick={handleReset}
-                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+                className="p-2 rounded-lg transition-all duration-200 hover:scale-105"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}
                 title="Reset"
               >
                 <RotateCcw size={18} />
@@ -396,26 +407,26 @@ export function ArchitecturePage() {
 
         {/* Progress indicator */}
         {playbackData && (
-          <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
+          <div className="mt-3 flex items-center gap-3 text-xs text-[#6B7280]">
             <span>
               Token{" "}
-              <span className="text-purple-400 font-bold">
+              <span className="text-[#00C896] font-bold">
                 {currentTokenIdx + 1}
               </span>
               /{numTokens}
             </span>
-            <span className="text-gray-600">|</span>
+            <span className="text-[#2D3748]">|</span>
             <span>
               Step{" "}
-              <span className="text-purple-400 font-bold">
+              <span className="text-[#00C896] font-bold">
                 {currentStep + 1}
               </span>
               /{NUM_ARCH_STEPS}
             </span>
-            <span className="text-gray-600">|</span>
+            <span className="text-[#2D3748]">|</span>
             <span>
               Layer{" "}
-              <span className="text-purple-400 font-bold">
+              <span className="text-[#00C896] font-bold">
                 {currentLayer + 1}
               </span>
             </span>
@@ -464,11 +475,16 @@ export function ArchitecturePage() {
                   setCurrentLayer(i);
                   setIsPlaying(false);
                 }}
-                className={`px-4 py-2 rounded-lg font-mono transition-all ${
+                className={`px-4 py-2 rounded-lg font-mono transition-all duration-200 ${
                   currentLayer === i
-                    ? "bg-bdh-accent text-white shadow-lg shadow-bdh-accent/30"
-                    : "bg-gray-800 hover:bg-gray-700 text-gray-400"
+                    ? "text-[#070D12] font-semibold"
+                    : "text-[#6B7280]"
                 }`}
+                style={{
+                  background: currentLayer === i ? '#00C896' : 'rgba(255,255,255,0.04)',
+                  boxShadow: currentLayer === i ? '0 0 20px rgba(0,200,150,0.25)' : 'none',
+                  border: '1px solid ' + (currentLayer === i ? 'rgba(0,200,150,0.3)' : 'rgba(255,255,255,0.06)'),
+                }}
               >
                 L{i}
               </button>
@@ -478,31 +494,33 @@ export function ArchitecturePage() {
           {/* Sparsity indicator */}
           {currentFrameData && (
             <div className="mt-4 grid grid-cols-2 gap-4">
-              <div className="p-4 rounded-lg bg-gray-800/50">
-                <div className="text-sm text-gray-400 mb-1">X Sparsity</div>
-                <div className="text-2xl font-bold text-bdh-accent">
+              <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="text-sm text-[#8B95A5] mb-1">X Sparsity</div>
+                <div className="text-2xl font-bold text-[#00C896]">
                   {(currentFrameData.x_sparsity * 100).toFixed(1)}%
                 </div>
-                <div className="mt-2 h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
                   <motion.div
-                    className="h-full bg-bdh-accent"
+                    className="h-full rounded-full"
+                    style={{ background: '#00C896', boxShadow: '0 0 8px rgba(0,200,150,0.4)' }}
                     initial={{ width: 0 }}
                     animate={{ width: `${currentFrameData.x_sparsity * 100}%` }}
-                    transition={{ duration: 0.3 }}
+                    transition={{ type: 'spring', stiffness: 120, damping: 18 }}
                   />
                 </div>
               </div>
-              <div className="p-4 rounded-lg bg-gray-800/50">
-                <div className="text-sm text-gray-400 mb-1">Y Sparsity</div>
-                <div className="text-2xl font-bold text-green-400">
+              <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="text-sm text-[#8B95A5] mb-1">Y Sparsity</div>
+                <div className="text-2xl font-bold text-[#2A7FFF]">
                   {(currentFrameData.y_sparsity * 100).toFixed(1)}%
                 </div>
-                <div className="mt-2 h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
                   <motion.div
-                    className="h-full bg-green-400"
+                    className="h-full rounded-full"
+                    style={{ background: '#2A7FFF', boxShadow: '0 0 8px rgba(42,127,255,0.4)' }}
                     initial={{ width: 0 }}
                     animate={{ width: `${currentFrameData.y_sparsity * 100}%` }}
-                    transition={{ duration: 0.3 }}
+                    transition={{ type: 'spring', stiffness: 120, damping: 18 }}
                   />
                 </div>
               </div>
@@ -518,8 +536,8 @@ export function ArchitecturePage() {
         transition={{ delay: 0.4 }}
         className="mt-6 glass-card p-6"
       >
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Zap size={20} className="text-bdh-accent" />
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-[#E2E8F0]">
+          <Zap size={20} className="text-[#00C896]" />
           Key Insights
         </h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -553,9 +571,9 @@ function InsightCard({
   description: string;
 }) {
   return (
-    <div className="p-4 rounded-lg bg-gray-800/50 border border-gray-700/50">
-      <h4 className="font-medium text-bdh-accent mb-2">{title}</h4>
-      <p className="text-sm text-gray-400">{description}</p>
+    <div className="p-4 rounded-lg transition-all duration-300 hover:translate-y-[-2px]" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <h4 className="font-medium text-[#00C896] mb-2">{title}</h4>
+      <p className="text-sm text-[#8B95A5]">{description}</p>
     </div>
   );
 }
@@ -571,5 +589,5 @@ function LoadingTimer() {
     );
     return () => clearInterval(id);
   }, []);
-  return <p className="text-gray-500 text-xs font-mono">Elapsed: {elapsed}s</p>;
+  return <p className="text-[#4A5568] text-xs font-mono">Elapsed: {elapsed}s</p>;
 }

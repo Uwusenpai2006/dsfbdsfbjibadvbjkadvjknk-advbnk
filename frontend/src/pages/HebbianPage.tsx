@@ -208,7 +208,7 @@ export function HebbianPage() {
   const trackedSynapses = headData?.tracked_synapses ?? [];
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-8" style={{ background: '#070D12' }}>
       {/* ── Header ── */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -218,7 +218,7 @@ export function HebbianPage() {
         <h1 className="text-3xl font-bold mb-2">
           <span className="gradient-text">Hebbian Learning</span> Dynamics
         </h1>
-        <p className="text-gray-400">
+        <p className="text-[#8B95A5]">
           Visualize how σ(i,j) = y_sparse · x_sparse accumulates word-by-word
           during a single forward pass — the gate mechanism IS Hebbian
           co-activation.
@@ -231,7 +231,7 @@ export function HebbianPage() {
         animate={{ opacity: 1, y: 0 }}
         className="glass-card p-6 mb-6"
       >
-        <label className="text-sm text-gray-400 mb-2 block">
+        <label className="text-sm text-[#8B95A5] mb-2 block">
           Input sequence (French — Europarl FR trained model)
         </label>
         <div className="flex gap-3 mb-3">
@@ -259,12 +259,12 @@ export function HebbianPage() {
 
         {/* Quick examples */}
         <div className="flex flex-wrap gap-2 mb-3">
-          <span className="text-xs text-gray-600">Try:</span>
+          <span className="text-xs text-[#4A5568]">Try:</span>
           {EXAMPLE_SENTENCES.map((ex, i) => (
             <button
               key={i}
               onClick={() => setInputText(ex)}
-              className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white transition-all truncate max-w-[220px]"
+              className="text-xs px-2 py-1 rounded bg-white/5 text-[#8B95A5] hover:bg-white/10 hover:text-[#E2E8F0] transition-all truncate max-w-[220px]"
             >
               {ex}
             </button>
@@ -280,7 +280,7 @@ export function HebbianPage() {
         {data && (
           <>
             {/* Summary stats */}
-            <div className="flex gap-6 mb-4 text-xs text-gray-500">
+            <div className="flex gap-6 mb-4 text-xs text-[#4A5568]">
               <span>
                 <span className="text-white font-mono">{data.num_bytes}</span>{" "}
                 bytes
@@ -312,16 +312,16 @@ export function HebbianPage() {
             {/* Layer + Head selectors */}
             <div className="flex items-center gap-4 mb-4 flex-wrap">
               <div className="flex items-center gap-2">
-                <Layers size={14} className="text-gray-500" />
-                <span className="text-xs text-gray-500">Layer:</span>
+                <Layers size={14} className="text-[#4A5568]" />
+                <span className="text-xs text-[#4A5568]">Layer:</span>
                 {availableLayers.map((l) => (
                   <button
                     key={l}
                     onClick={() => setSelectedLayer(l)}
                     className={`px-2.5 py-1 rounded-full text-xs font-mono transition-all ${
                       selectedLayer === l
-                        ? "bg-bdh-accent text-white"
-                        : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                        ? "bg-bdh-accent text-[#E2E8F0]"
+                        : "bg-white/5 text-[#8B95A5] hover:bg-white/10"
                     }`}
                   >
                     L{l}
@@ -330,7 +330,7 @@ export function HebbianPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Head:</span>
+                <span className="text-xs text-[#4A5568]">Head:</span>
                 {Array.from(
                   { length: data.model_config.n_head },
                   (_, i) => i,
@@ -340,8 +340,8 @@ export function HebbianPage() {
                     onClick={() => setSelectedHead(h)}
                     className={`px-2.5 py-1 rounded-full text-xs font-mono transition-all ${
                       selectedHead === h
-                        ? "text-white"
-                        : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                        ? "text-[#E2E8F0]"
+                        : "bg-white/5 text-[#8B95A5] hover:bg-white/10"
                     }`}
                     style={
                       selectedHead === h
@@ -359,13 +359,13 @@ export function HebbianPage() {
 
               {/* Sigma/Delta toggle */}
               <div className="flex items-center gap-2 ml-auto">
-                <span className="text-xs text-gray-500">View:</span>
+                <span className="text-xs text-[#4A5568]">View:</span>
                 <button
                   onClick={() => setShowDelta(false)}
                   className={`px-2.5 py-1 rounded-full text-xs transition-all ${
                     !showDelta
-                      ? "bg-bdh-accent text-white"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                      ? "bg-bdh-accent text-[#E2E8F0]"
+                      : "bg-white/5 text-[#8B95A5] hover:bg-white/10"
                   }`}
                 >
                   Cumulative σ
@@ -374,8 +374,8 @@ export function HebbianPage() {
                   onClick={() => setShowDelta(true)}
                   className={`px-2.5 py-1 rounded-full text-xs transition-all ${
                     showDelta
-                      ? "bg-bdh-accent text-white"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                      ? "bg-bdh-accent text-[#E2E8F0]"
+                      : "bg-white/5 text-[#8B95A5] hover:bg-white/10"
                   }`}
                 >
                   Δσ per word
@@ -395,10 +395,10 @@ export function HebbianPage() {
                     key={idx}
                     className={`px-2 py-1 rounded font-mono text-sm cursor-pointer transition-all ${
                       isActive
-                        ? "bg-bdh-accent text-white scale-110 ring-2 ring-bdh-accent/50"
+                        ? "bg-bdh-accent text-[#E2E8F0] scale-110 ring-2 ring-bdh-accent/50"
                         : isPast
-                          ? "text-violet-300 border border-violet-500/30"
-                          : "bg-gray-800 text-gray-500"
+                          ? "text-[#2A7FFF] border border-[#2A7FFF]/30"
+                          : "bg-white/5 text-[#4A5568]"
                     }`}
                     style={
                       !isActive && isPast
@@ -446,20 +446,20 @@ export function HebbianPage() {
                 onChange={(e) => setCurrentWord(parseInt(e.target.value))}
                 className="flex-1"
               />
-              <span className="text-gray-400 font-mono text-sm">
+              <span className="text-[#8B95A5] font-mono text-sm">
                 {words.length > 0 ? currentWord + 1 : 0}/{words.length}
               </span>
             </div>
 
             {/* Speed control */}
             <div className="flex items-center gap-3 mt-3">
-              <span className="text-xs text-gray-500">Speed:</span>
+              <span className="text-xs text-[#4A5568]">Speed:</span>
               <button
                 onClick={() => setPlaybackSpeed(2800)}
                 className={`px-2 py-0.5 rounded text-xs transition-all ${
                   playbackSpeed === 2800
-                    ? "bg-bdh-accent text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                    ? "bg-bdh-accent text-[#E2E8F0]"
+                    : "bg-white/5 text-[#8B95A5] hover:bg-white/10"
                 }`}
               >
                 Slow
@@ -468,8 +468,8 @@ export function HebbianPage() {
                 onClick={() => setPlaybackSpeed(1800)}
                 className={`px-2 py-0.5 rounded text-xs transition-all ${
                   playbackSpeed === 1800
-                    ? "bg-bdh-accent text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                    ? "bg-bdh-accent text-[#E2E8F0]"
+                    : "bg-white/5 text-[#8B95A5] hover:bg-white/10"
                 }`}
               >
                 Normal
@@ -478,13 +478,13 @@ export function HebbianPage() {
                 onClick={() => setPlaybackSpeed(1000)}
                 className={`px-2 py-0.5 rounded text-xs transition-all ${
                   playbackSpeed === 1000
-                    ? "bg-bdh-accent text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                    ? "bg-bdh-accent text-[#E2E8F0]"
+                    : "bg-white/5 text-[#8B95A5] hover:bg-white/10"
                 }`}
               >
                 Fast
               </button>
-              <span className="text-[10px] text-gray-600 font-mono">
+              <span className="text-[10px] text-[#4A5568] font-mono">
                 {(playbackSpeed / 1000).toFixed(1)}s/word
               </span>
             </div>
@@ -504,11 +504,11 @@ export function HebbianPage() {
             <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
               <Activity size={20} className="text-bdh-accent" />
               {showDelta ? "Δσ" : "σ"} Word Timeline
-              <span className="text-xs text-gray-500 font-normal ml-1">
+              <span className="text-xs text-[#4A5568] font-normal ml-1">
                 L{selectedLayer} H{selectedHead}
               </span>
             </h3>
-            <p className="text-xs text-gray-600 mb-4">
+            <p className="text-xs text-[#4A5568] mb-4">
               {showDelta
                 ? "Per-word Hebbian increment: how much σ grows at each word"
                 : "Cumulative Hebbian σ = Σ y_sparse · x_sparse up to each word"}
@@ -548,19 +548,19 @@ export function HebbianPage() {
                       className={`p-2 rounded-lg cursor-pointer transition-all ${
                         isActive
                           ? "bg-bdh-accent/15 ring-1 ring-bdh-accent/40"
-                          : "bg-gray-800/40 hover:bg-gray-800/60"
+                          : "bg-white/[0.04] hover:bg-white/[0.05]"
                       }`}
                       onClick={() => setCurrentWord(wi)}
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <span
                           className={`font-mono text-sm w-24 truncate ${
-                            isActive ? "text-white font-bold" : "text-gray-400"
+                            isActive ? "text-white font-bold" : "text-[#8B95A5]"
                           }`}
                         >
                           {w.word}
                         </span>
-                        <span className="text-[10px] text-gray-600 font-mono">
+                        <span className="text-[10px] text-[#4A5568] font-mono">
                           gate={w.gate_activity.toFixed(1)}
                         </span>
                       </div>
@@ -585,7 +585,7 @@ export function HebbianPage() {
                               >
                                 {syn.id.slice(0, 5)}
                               </span>
-                              <div className="flex-1 h-2 bg-gray-700/50 rounded-full overflow-hidden">
+                              <div className="flex-1 h-2 bg-white/[0.08] rounded-full overflow-hidden">
                                 <motion.div
                                   className="h-full rounded-full"
                                   style={{ backgroundColor: color }}
@@ -624,10 +624,10 @@ export function HebbianPage() {
               className="glass-card p-6"
             >
               <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
-                <BarChart3 size={20} className="text-emerald-400" />
+                <BarChart3 size={20} className="text-[#00C896]" />
                 Context-Driven Prediction Shift
               </h3>
-              <p className="text-xs text-gray-600 mb-4">
+              <p className="text-xs text-[#4A5568] mb-4">
                 How the Hebbian gate reshapes predictions: top next-byte
                 probabilities before vs after seeing the full sentence
               </p>
@@ -635,23 +635,23 @@ export function HebbianPage() {
               <div className="grid grid-cols-2 gap-4">
                 {/* Before */}
                 <div>
-                  <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-gray-500" />
+                  <div className="text-xs text-[#4A5568] mb-2 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#4A5568]" />
                     Before (&ldquo;{data.predictions.prefix_text}&rdquo;)
                   </div>
                   <div className="space-y-1">
                     {data.predictions.before.slice(0, 8).map((p, i) => (
                       <div key={i} className="flex items-center gap-2 text-xs">
-                        <span className="font-mono text-gray-400 w-8 text-center bg-gray-800 rounded px-1">
+                        <span className="font-mono text-[#8B95A5] w-8 text-center bg-white/5 rounded px-1">
                           {p.char}
                         </span>
-                        <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-gray-500 rounded-full"
+                            className="h-full bg-[#4A5568] rounded-full"
                             style={{ width: `${p.prob * 100}%` }}
                           />
                         </div>
-                        <span className="font-mono text-gray-500 w-12 text-right">
+                        <span className="font-mono text-[#4A5568] w-12 text-right">
                           {(p.prob * 100).toFixed(1)}%
                         </span>
                       </div>
@@ -661,23 +661,23 @@ export function HebbianPage() {
 
                 {/* After */}
                 <div>
-                  <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <div className="text-xs text-[#4A5568] mb-2 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#00C896]" />
                     After (full sentence)
                   </div>
                   <div className="space-y-1">
                     {data.predictions.after.slice(0, 8).map((p, i) => (
                       <div key={i} className="flex items-center gap-2 text-xs">
-                        <span className="font-mono text-emerald-400 w-8 text-center bg-emerald-500/10 rounded px-1">
+                        <span className="font-mono text-[#00C896] w-8 text-center bg-[#00C896]/10 rounded px-1">
                           {p.char}
                         </span>
-                        <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-emerald-400 rounded-full"
+                            className="h-full bg-[#00C896] rounded-full"
                             style={{ width: `${p.prob * 100}%` }}
                           />
                         </div>
-                        <span className="font-mono text-emerald-400 w-12 text-right">
+                        <span className="font-mono text-[#00C896] w-12 text-right">
                           {(p.prob * 100).toFixed(1)}%
                         </span>
                       </div>
@@ -686,10 +686,10 @@ export function HebbianPage() {
                 </div>
               </div>
 
-              <div className="mt-3 p-2 bg-gray-800/50 rounded text-xs text-gray-500">
+              <div className="mt-3 p-2 bg-white/\[0.03\] rounded text-xs text-[#4A5568]">
                 <ArrowRight
                   size={12}
-                  className="inline text-emerald-400 mr-1"
+                  className="inline text-[#00C896] mr-1"
                 />
                 The gate = x_sparse · y_sparse shapes which neurons contribute
                 to the next prediction. More context → more specific gates →
@@ -705,10 +705,10 @@ export function HebbianPage() {
               className="glass-card p-6"
             >
               <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
-                <Layers size={20} className="text-violet-400" />
+                <Layers size={20} className="text-[#2A7FFF]" />
                 Layer-by-Layer Gate Activity
               </h3>
-              <p className="text-xs text-gray-600 mb-4">
+              <p className="text-xs text-[#4A5568] mb-4">
                 Total Hebbian gate magnitude per layer — where does the model
                 concentrate its gating?
               </p>
@@ -739,7 +739,7 @@ export function HebbianPage() {
                         className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all ${
                           isSelected
                             ? "bg-bdh-accent/10 ring-1 ring-bdh-accent/30"
-                            : "hover:bg-gray-800/60"
+                            : "hover:bg-white/[0.05]"
                         }`}
                         onClick={() => {
                           setSelectedLayer(ls.layer);
@@ -747,16 +747,16 @@ export function HebbianPage() {
                         }}
                       >
                         {isExpanded ? (
-                          <ChevronDown size={12} className="text-gray-500" />
+                          <ChevronDown size={12} className="text-[#4A5568]" />
                         ) : (
-                          <ChevronRight size={12} className="text-gray-500" />
+                          <ChevronRight size={12} className="text-[#4A5568]" />
                         )}
                         <span
-                          className={`font-mono text-xs w-6 ${isSelected ? "text-white" : "text-gray-400"}`}
+                          className={`font-mono text-xs w-6 ${isSelected ? "text-[#E2E8F0]" : "text-[#8B95A5]"}`}
                         >
                           L{ls.layer}
                         </span>
-                        <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
                           <motion.div
                             className="h-full rounded-full"
                             style={{
@@ -770,7 +770,7 @@ export function HebbianPage() {
                             transition={{ duration: 0.5 }}
                           />
                         </div>
-                        <span className="font-mono text-xs text-gray-400 w-16 text-right">
+                        <span className="font-mono text-xs text-[#8B95A5] w-16 text-right">
                           {totalGate.toFixed(0)}
                         </span>
                       </div>
@@ -789,8 +789,8 @@ export function HebbianPage() {
                                 key={h.head}
                                 className={`flex items-center gap-2 p-1.5 rounded cursor-pointer ${
                                   selectedHead === h.head && isSelected
-                                    ? "bg-gray-700/50"
-                                    : "hover:bg-gray-800/40"
+                                    ? "bg-white/[0.08]"
+                                    : "hover:bg-white/[0.04]"
                                 }`}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -808,7 +808,7 @@ export function HebbianPage() {
                                 >
                                   {h.head}
                                 </span>
-                                <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                                <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
                                   <div
                                     className="h-full rounded-full"
                                     style={{
@@ -820,11 +820,11 @@ export function HebbianPage() {
                                     }}
                                   />
                                 </div>
-                                <span className="text-[10px] font-mono text-gray-500 w-14 text-right">
+                                <span className="text-[10px] font-mono text-[#4A5568] w-14 text-right">
                                   {h.total_gate_activity.toFixed(0)}
                                 </span>
                                 {h.top_synapse && (
-                                  <span className="text-[9px] text-gray-600 font-mono">
+                                  <span className="text-[9px] text-[#4A5568] font-mono">
                                     top: {h.top_synapse.id}
                                   </span>
                                 )}
@@ -853,7 +853,7 @@ export function HebbianPage() {
             <Zap size={20} className="text-amber-400" />
             Gate Activity by Word
           </h3>
-          <p className="text-xs text-gray-600 mb-4">
+          <p className="text-xs text-[#4A5568] mb-4">
             Total Σ(x_sparse · y_sparse) at each word position — brighter =
             stronger Hebbian co-activation
           </p>
@@ -902,28 +902,11 @@ export function HebbianPage() {
         >
           {/* Animated pipeline diagram */}
           <div className="glass-card p-8 relative overflow-hidden">
-            {/* Background glow */}
-            <div className="absolute inset-0 pointer-events-none">
-              <motion.div
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full"
-                style={{
-                  background:
-                    "radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)",
-                }}
-                animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.8, 0.5] }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-              />
-            </div>
-
             <h3 className="text-xl font-bold mb-2 text-center relative z-10">
               <Sparkles size={18} className="inline text-amber-400 mr-2" />
               The BDH Hebbian Pipeline
             </h3>
-            <p className="text-gray-500 text-sm text-center mb-8 relative z-10">
+            <p className="text-[#4A5568] text-sm text-center mb-8 relative z-10">
               How a single byte flows through the gated Hebbian architecture
             </p>
 
@@ -984,10 +967,10 @@ export function HebbianPage() {
                       }}
                     />
                     <div
-                      className="w-36 md:w-44 p-4 rounded-2xl border backdrop-blur-sm"
+                      className="w-36 md:w-44 p-4 rounded-2xl border"
                       style={{
                         borderColor: `${stage.color}40`,
-                        background: `linear-gradient(135deg, ${stage.color}10 0%, ${stage.color}05 100%)`,
+                        background: `${stage.color}08`,
                       }}
                     >
                       <div className="flex items-center gap-2 mb-2">
@@ -999,10 +982,10 @@ export function HebbianPage() {
                           {i + 1}. {stage.label}
                         </span>
                       </div>
-                      <div className="font-mono text-[11px] text-gray-300 mb-1">
+                      <div className="font-mono text-[11px] text-[#CBD5E0] mb-1">
                         {stage.formula}
                       </div>
-                      <p className="text-[10px] text-gray-500">{stage.desc}</p>
+                      <p className="text-[10px] text-[#4A5568]">{stage.desc}</p>
                     </div>
                   </motion.div>
 
@@ -1022,7 +1005,7 @@ export function HebbianPage() {
                           delay: i * 0.4,
                         }}
                       >
-                        <ArrowRight size={18} className="text-gray-600" />
+                        <ArrowRight size={18} className="text-[#4A5568]" />
                       </motion.div>
                     </motion.div>
                   )}
@@ -1033,8 +1016,8 @@ export function HebbianPage() {
             {/* Animated neuron firing visualization */}
             <div className="mt-10 relative z-10">
               <div className="flex items-center justify-center gap-1 mb-3">
-                <Zap size={14} className="text-violet-400" />
-                <span className="text-xs text-gray-500">
+                <Zap size={14} className="text-[#2A7FFF]" />
+                <span className="text-xs text-[#4A5568]">
                   Simulated neuron co-activation
                 </span>
               </div>
@@ -1069,7 +1052,7 @@ export function HebbianPage() {
                   );
                 })}
               </div>
-              <p className="text-center text-[10px] text-gray-600 mt-2">
+              <p className="text-center text-[10px] text-[#4A5568] mt-2">
                 ~5% of 8192 neurons fire per token — the gate amplifies
                 correlated pairs
               </p>
@@ -1115,7 +1098,7 @@ export function HebbianPage() {
                     {card.title}
                   </span>
                 </div>
-                <p className="text-xs text-gray-400 leading-relaxed">
+                <p className="text-xs text-[#8B95A5] leading-relaxed">
                   {card.text}
                 </p>
               </motion.div>
@@ -1129,7 +1112,7 @@ export function HebbianPage() {
             animate={{ opacity: 1 }}
             transition={{ delay: 1 }}
           >
-            <p className="text-gray-500 text-xs text-center">
+            <p className="text-[#4A5568] text-xs text-center">
               <span className="text-white font-medium">Note:</span> This
               visualizes inference-time Hebbian dynamics within a single forward
               pass. The model&apos;s weights are frozen — what changes is which
@@ -1149,29 +1132,29 @@ export function HebbianPage() {
         >
           <div className="flex items-center gap-2 mb-3">
             <Brain size={16} className="text-bdh-accent" />
-            <span className="text-sm font-semibold text-gray-300">
+            <span className="text-sm font-semibold text-[#CBD5E0]">
               Pipeline Recap
             </span>
-            <div className="flex-1 h-px bg-gray-800" />
+            <div className="flex-1 h-px bg-white/5" />
           </div>
           <div className="flex gap-3 flex-wrap text-[10px] font-mono">
             <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
               1. x_sparse = ReLU(x·E)
             </span>
-            <ArrowRight size={12} className="text-gray-600 self-center" />
+            <ArrowRight size={12} className="text-[#4A5568] self-center" />
             <span className="px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20">
               2. a* = Attn(x_sparse)·x
             </span>
-            <ArrowRight size={12} className="text-gray-600 self-center" />
-            <span className="px-2 py-1 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">
+            <ArrowRight size={12} className="text-[#4A5568] self-center" />
+            <span className="px-2 py-1 rounded bg-[#2A7FFF]/10 text-[#2A7FFF] border border-[#2A7FFF]/20">
               3. gate = x·y (Hebbian)
             </span>
-            <ArrowRight size={12} className="text-gray-600 self-center" />
+            <ArrowRight size={12} className="text-[#4A5568] self-center" />
             <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
               4. x_l = x + D·gate
             </span>
           </div>
-          <p className="text-[10px] text-gray-600 mt-2">
+          <p className="text-[10px] text-[#4A5568] mt-2">
             gate = x_sparse · y_sparse is the Hebbian signal. σ accumulates
             through the sentence. Weights are frozen — only co-activation
             patterns change.

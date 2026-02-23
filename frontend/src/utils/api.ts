@@ -100,7 +100,7 @@ export const analysis = {
   ) =>
     api.post("/analysis/neuron-fingerprint", {
       concept_name: conceptName,
-      words,
+      examples: words,
       model_name: modelName,
     }),
 

@@ -25,8 +25,6 @@ import torch
 
 # Import routes
 from backend.routes import inference, analysis, models, visualization,graph as graph_routes
-
-
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -166,6 +164,13 @@ app.include_router(
     graph_routes.router, 
     prefix=f"{settings.API_PREFIX}/graph",
       tags=["graph"])
+
+if merge_routes:
+    app.include_router(
+        merge_routes.router,
+        prefix=f"{settings.API_PREFIX}/merge",
+        tags=["merge"]
+    )
 
 
 # =============================================================================

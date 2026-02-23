@@ -30,7 +30,7 @@ import torch.nn.functional as F
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "training"))
-from bdh import BDH, BDHConfig, ExtractionConfig, load_model
+from bdh import BDH, BDHConfig, load_model
 
 @dataclass
 class MergeConfig:
@@ -194,88 +194,6 @@ def gen(model, prompt, dev, n=80):
     return bytes(o[0].cpu().tolist()).decode("utf-8", errors="replace")
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Heritage Probe — neuron activation analysis on merged model
-# ═══════════════════════════════════════════════════════════════════════
-@torch.no_grad()
-def heritage_probe(model, heritage, dev):
-    """Run French and Portuguese text through the model and measure which
-    neuron bank (French-origin vs Portuguese-origin) activates for each.
-    Returns per-layer and summary statistics."""
-    N_orig = heritage["neurons_per_head_original"]  # boundary between banks
-    n_layers = model.config.n_layer
-
-    fr_text = "\n".join(FRENCH_TEST)
-    pt_text = "\n".join(PORTUGUESE_TEST)
-
-    results = {"french_input": {}, "portuguese_input": {}, "summary": {}}
-
-    for lang_label, text in [("french_input", fr_text), ("portuguese_input", pt_text)]:
-        tokens = torch.tensor([list(text.encode("utf-8")[:512])], dtype=torch.long, device=dev)
-        ext_cfg = ExtractionConfig(
-            capture_sparse_activations=True,
-            capture_attention_patterns=False,
-            capture_pre_relu=False,
-            capture_layer_outputs=False,
-        )
-        with model.extraction_mode(ext_cfg) as buf:
-            model(tokens)
-
-        layer_data = {}
-        for l in range(n_layers):
-            if l not in buf.x_sparse:
-                continue
-            # x_sparse shape: (1, nh, T, N_merged)  where N_merged = 2*N_orig
-            xs = buf.x_sparse[l][0]  # (nh, T, N_merged)
-            # Average activation across heads and time
-            act = xs.mean(dim=(0, 1))  # (N_merged,)
-            fr_act = act[:N_orig]  # French-origin neurons
-            pt_act = act[N_orig:]  # Portuguese-origin neurons
-            fr_active = (fr_act > 0).sum().item()
-            pt_active = (pt_act > 0).sum().item()
-            fr_energy = fr_act.sum().item()
-            pt_energy = pt_act.sum().item()
-            total_energy = fr_energy + pt_energy
-            layer_data[str(l)] = {
-                "french": {
-                    "origin": heritage["model1_name"],
-                    "active_count": fr_active,
-                    "total_count": int(N_orig),
-                    "activation_ratio": round(fr_energy / max(total_energy, 1e-8), 4),
-                },
-                "portuguese": {
-                    "origin": heritage["model2_name"],
-                    "active_count": pt_active,
-                    "total_count": int(N_orig),
-                    "activation_ratio": round(pt_energy / max(total_energy, 1e-8), 4),
-                },
-            }
-        # Summary across all layers
-        all_fr = sum(d["french"]["activation_ratio"] for d in layer_data.values())
-        all_pt = sum(d["portuguese"]["activation_ratio"] for d in layer_data.values())
-        total = all_fr + all_pt
-        results[lang_label] = {
-            "layers": layer_data,
-            "summary": {
-                "french_percentage": round(100 * all_fr / max(total, 1e-8), 2),
-                "portuguese_percentage": round(100 * all_pt / max(total, 1e-8), 2),
-                "dominant_heritage": heritage["model1_name"] if all_fr > all_pt else heritage["model2_name"],
-            }
-        }
-
-    # Overall summary: when French input → French neurons dominate? And vice versa?
-    fr_on_fr = results["french_input"]["summary"]["french_percentage"]
-    pt_on_pt = results["portuguese_input"]["summary"]["portuguese_percentage"]
-    results["summary"] = {
-        "french_input_french_pct": fr_on_fr,
-        "french_input_portuguese_pct": round(100 - fr_on_fr, 2),
-        "portuguese_input_french_pct": round(100 - pt_on_pt, 2),
-        "portuguese_input_portuguese_pct": pt_on_pt,
-        "routing_quality": round((fr_on_fr + pt_on_pt) / 2, 2),
-        "clear_separation": fr_on_fr > 55 and pt_on_pt > 55,
-    }
-    return results
-
-# ═══════════════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════════════
 def main():
@@ -323,7 +241,6 @@ def main():
 
     # Evaluate
     ev = {}
-    probe_data = None
     if not a.skip_eval:
         print("\n  Evaluating...")
         fv, pv = a.french_val, a.portuguese_val
@@ -351,14 +268,6 @@ def main():
             ft = load_model(a.finetuned, a.device)
             ev["finetuned"] = eval_model(ft, fv, pv, a.device)
             print(f"  finetuned: {ev['finetuned']}")
-
-            # Heritage probe on fine-tuned model
-            print("\n  Running heritage probe on fine-tuned model...")
-            probe_data = heritage_probe(ft, heritage, a.device)  # noqa: F841 — used later for JSON
-            s = probe_data["summary"]
-            print(f"  French input  -> French neurons {s['french_input_french_pct']:.1f}% | Portuguese neurons {s['french_input_portuguese_pct']:.1f}%")
-            print(f"  Portuguese input -> French neurons {s['portuguese_input_french_pct']:.1f}% | Portuguese neurons {s['portuguese_input_portuguese_pct']:.1f}%")
-            print(f"  Routing quality: {s['routing_quality']:.1f}% | Clear separation: {s['clear_separation']}")
             del ft
 
     # Generate samples from all models
@@ -408,18 +317,7 @@ def main():
             "name":"Merged (fine-tuned)","flag":"\U0001f30d","params":pm,
             "n_neurons":mc2.n_neurons,"n_heads":mc2.n_head,"n_layers":mc2.n_layer,"n_embd":mc2.n_embd}
 
-    # Include finetune metadata if available
-    finetune_info = None
-    if a.finetuned and Path(a.finetuned).exists():
-        ft_ckpt = torch.load(a.finetuned, map_location="cpu", weights_only=False)
-        finetune_info = ft_ckpt.get("finetune_info", None)
-        del ft_ckpt
-
     fd = {"heritage":heritage, "models":models_data, "evaluation":ev, "samples":samples}
-    if probe_data:
-        fd["heritage_probe"] = probe_data
-    if finetune_info:
-        fd["finetune_info"] = finetune_info
     with open(fjp,"w",encoding="utf-8") as f: json.dump(fd,f,indent=2,ensure_ascii=False)
     print(f"\n  Frontend JSON: {fjp}")
     print("="*60+"\n  Done!\n"+"="*60)
