@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Zap, Loader2, AlertCircle, Wifi, WifiOff, Send } from "lucide-react";
+import { Zap, Loader2, AlertCircle, Wifi, WifiOff, Send, Cloud } from "lucide-react";
+import { hfBackend } from "../utils/api";
 
 interface LiveInferenceProps {
   onDataReceived?: (data: any) => void;
@@ -11,18 +12,36 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isServerOnline, setIsServerOnline] = useState<boolean | null>(null);
+  const [isHfOnline, setIsHfOnline] = useState<boolean | null>(null);
   const [lastResult, setLastResult] = useState<any>(null);
+  const [generatedText, setGeneratedText] = useState<string | null>(null);
+  const [usedBackend, setUsedBackend] = useState<"huggingface" | "local" | null>(null);
 
-  // Check if backend is available
+  // Check if backends are available
   useEffect(() => {
+    checkHfStatus();
     checkServerStatus();
-    const interval = setInterval(checkServerStatus, 10000); // Check every 10s
+    const interval = setInterval(() => {
+      checkHfStatus();
+      checkServerStatus();
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
+  // Check HuggingFace backend (PRIMARY)
+  const checkHfStatus = async () => {
+    try {
+      const health = await hfBackend.checkHealth();
+      setIsHfOnline(health.model_loaded);
+    } catch {
+      setIsHfOnline(false);
+    }
+  };
+
+  // Check local backend (FALLBACK)
   const checkServerStatus = async () => {
     try {
-      const response = await fetch("/api/health", {
+      const response = await fetch("/health", {
         method: "GET",
         signal: AbortSignal.timeout(3000),
       });
@@ -32,12 +51,35 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
     }
   };
 
+  const hasAnyBackend = isHfOnline || isServerOnline;
+  const activeBackend = isHfOnline ? "huggingface" : isServerOnline ? "local" : "none";
+
   const runInference = async () => {
     if (!inputText.trim()) return;
 
     setIsLoading(true);
     setError(null);
+    setGeneratedText(null);
+    setLastResult(null);
+    setUsedBackend(null);
 
+    // TRY 1: HuggingFace (primary)
+    try {
+      const result = await hfBackend.generate(inputText, 100, 1.0, 3);
+      setGeneratedText(result.generated_text);
+      setUsedBackend("huggingface");
+      onDataReceived?.({
+        generated_text: result.generated_text,
+        tokens_generated: result.tokens_generated,
+        source: "huggingface",
+      });
+      setIsLoading(false);
+      return;
+    } catch (hfErr) {
+      console.warn("HuggingFace failed, trying local backend:", hfErr);
+    }
+
+    // TRY 2: Local backend (fallback)
     try {
       const response = await fetch("/api/inference/run", {
         method: "POST",
@@ -52,12 +94,17 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
 
       const data = await response.json();
       setLastResult(data);
+      setUsedBackend("local");
       onDataReceived?.(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
       setIsLoading(false);
+      return;
+    } catch (localErr) {
+      console.warn("Local backend also failed:", localErr);
     }
+
+    // BOTH FAILED
+    setError("Both HuggingFace and local backends are unavailable. HuggingFace may be waking up — try again in ~30 seconds.");
+    setIsLoading(false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -76,28 +123,58 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
           Live Inference
         </h3>
 
-        <div className="flex items-center gap-2">
-          {isServerOnline === null ? (
-            <span className="text-gray-500 text-sm flex items-center gap-1">
+        <div className="flex items-center gap-3">
+          {/* HuggingFace status (PRIMARY) */}
+          {isHfOnline === null ? (
+            <span className="text-[#4A5568] text-sm flex items-center gap-1">
               <Loader2 size={14} className="animate-spin" />
-              Checking...
+              HF...
+            </span>
+          ) : isHfOnline ? (
+            <span className="text-blue-400 text-sm flex items-center gap-1">
+              <Cloud size={14} />
+              HF Online
+            </span>
+          ) : (
+            <span className="text-[#4A5568] text-sm flex items-center gap-1">
+              <Cloud size={14} />
+              HF Off
+            </span>
+          )}
+
+          {/* Local backend status (FALLBACK) */}
+          {isServerOnline === null ? (
+            <span className="text-[#4A5568] text-sm flex items-center gap-1">
+              <Loader2 size={14} className="animate-spin" />
             </span>
           ) : isServerOnline ? (
             <span className="text-green-400 text-sm flex items-center gap-1">
               <Wifi size={14} />
-              Backend Online
+              Local
             </span>
           ) : (
-            <span className="text-orange-400 text-sm flex items-center gap-1">
+            <span className="text-[#4A5568] text-sm flex items-center gap-1">
               <WifiOff size={14} />
-              Backend Offline
+              Local Off
             </span>
           )}
         </div>
       </div>
 
-      {/* Offline warning */}
-      {isServerOnline === false && (
+      {/* Active backend indicator */}
+      {hasAnyBackend && (
+        <div className="mb-3 text-xs text-[#4A5568]">
+          Primary:{" "}
+          <span className={activeBackend === "huggingface" ? "text-blue-400" : "text-green-400"}>
+            {activeBackend === "huggingface"
+              ? "HuggingFace (deployed model)"
+              : "Local Backend (fallback)"}
+          </span>
+        </div>
+      )}
+
+      {/* Both offline warning */}
+      {hasAnyBackend === false && isHfOnline !== null && isServerOnline !== null && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -105,12 +182,8 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         >
           <p className="text-orange-300 flex items-center gap-2">
             <AlertCircle size={16} />
-            Backend server not running. Start it with:
+            No backends available. HuggingFace may be waking up (~30s after inactivity).
           </p>
-          <code className="block mt-2 p-2 bg-gray-900 rounded text-xs text-gray-300">
-            python backend/live_server.py --model
-            checkpoints/french/french_best.pt
-          </code>
         </motion.div>
       )}
 
@@ -123,11 +196,11 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
           onKeyPress={handleKeyPress}
           placeholder="Type any text to analyze (e.g., 'The capital of France is Paris')"
           className="input-field flex-1"
-          disabled={!isServerOnline || isLoading}
+          disabled={!hasAnyBackend || isLoading}
         />
         <button
           onClick={runInference}
-          disabled={!isServerOnline || isLoading || !inputText.trim()}
+          disabled={!hasAnyBackend || isLoading || !inputText.trim()}
           className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? (
@@ -153,37 +226,54 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         )}
       </AnimatePresence>
 
-      {/* Quick stats from last result */}
-      {lastResult && (
+      {/* Generated text result (from HuggingFace) */}
+      {generatedText && usedBackend === "huggingface" && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-4 p-4 bg-white/[0.03] rounded-lg border border-blue-500/20"
+        >
+          <div className="text-xs text-blue-400 mb-2 flex items-center gap-1">
+            <Cloud size={12} />
+            Generated via HuggingFace
+          </div>
+          <pre className="text-sm text-[#E2E8F0] whitespace-pre-wrap font-mono leading-relaxed">
+            {generatedText}
+          </pre>
+        </motion.div>
+      )}
+
+      {/* Quick stats from last result (from local backend) */}
+      {lastResult && usedBackend === "local" && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className="mt-4 grid grid-cols-3 gap-4"
         >
-          <div className="p-3 bg-gray-800/50 rounded-lg text-center">
+          <div className="p-3 bg-white/[0.03] rounded-lg text-center">
             <div className="text-2xl font-bold text-bdh-accent">
               {(lastResult.overall_sparsity * 100).toFixed(1)}%
             </div>
-            <div className="text-xs text-gray-400">Sparsity</div>
+            <div className="text-xs text-[#8B95A5]">Sparsity</div>
           </div>
-          <div className="p-3 bg-gray-800/50 rounded-lg text-center">
+          <div className="p-3 bg-white/[0.03] rounded-lg text-center">
             <div className="text-2xl font-bold text-blue-400">
               {lastResult.input_tokens.length}
             </div>
-            <div className="text-xs text-gray-400">Tokens</div>
+            <div className="text-xs text-[#8B95A5]">Tokens</div>
           </div>
-          <div className="p-3 bg-gray-800/50 rounded-lg text-center">
+          <div className="p-3 bg-white/[0.03] rounded-lg text-center">
             <div className="text-2xl font-bold text-green-400">
               {lastResult.frames.length}
             </div>
-            <div className="text-xs text-gray-400">Frames</div>
+            <div className="text-xs text-[#8B95A5]">Frames</div>
           </div>
         </motion.div>
       )}
 
       {/* Example prompts */}
       <div className="mt-4">
-        <p className="text-xs text-gray-500 mb-2">Try these examples:</p>
+        <p className="text-xs text-[#4A5568] mb-2">Try these examples:</p>
         <div className="flex flex-wrap gap-2">
           {[
             "The European Parliament",
@@ -194,7 +284,7 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
             <button
               key={example}
               onClick={() => setInputText(example)}
-              className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-gray-200 transition-colors"
+              className="px-2 py-1 text-xs bg-white/5 hover:bg-white/10 rounded text-[#8B95A5] hover:text-[#E2E8F0] transition-colors"
             >
               {example}
             </button>

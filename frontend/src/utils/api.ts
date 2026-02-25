@@ -7,6 +7,110 @@ export const api = axios.create({
   timeout: 30000,
 });
 
+/* ------------------------------------------------------------------ */
+/*  HUGGINGFACE BACKEND (deployed BDH model)                           */
+/* ------------------------------------------------------------------ */
+const HF_API_URL =
+  import.meta.env.VITE_BDH_API_URL || "http://localhost:7860";
+
+export const hfBackend = {
+  /** Check if HuggingFace backend is online */
+  checkHealth: async (): Promise<{
+    status: string;
+    model_loaded: boolean;
+    device: string;
+  }> => {
+    const res = await fetch(`${HF_API_URL}/`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) throw new Error(`HF health check failed: ${res.status}`);
+    return res.json();
+  },
+
+  /** Generate text using deployed BDH model */
+  generate: async (
+    prompt: string,
+    maxNewTokens = 100,
+    temperature = 1.0,
+    topK = 3
+  ): Promise<{
+    generated_text: string;
+    prompt: string;
+    tokens_generated: number;
+  }> => {
+    const res = await fetch(`${HF_API_URL}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        max_new_tokens: maxNewTokens,
+        temperature,
+        top_k: topK,
+      }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: "Unknown error" }));
+      throw new Error(error.detail || `Generation failed: ${res.status}`);
+    }
+    return res.json();
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Backend connection status (reactive)                               */
+/* ------------------------------------------------------------------ */
+type StatusListener = (connected: boolean) => void;
+const _listeners = new Set<StatusListener>();
+let _backendConnected = false;
+
+export function onBackendStatus(fn: StatusListener) {
+  _listeners.add(fn);
+  fn(_backendConnected); // notify immediately with current state
+  return () => _listeners.delete(fn);
+}
+export function isBackendConnected() {
+  return _backendConnected;
+}
+function _setConnected(v: boolean) {
+  if (v !== _backendConnected) {
+    _backendConnected = v;
+    _listeners.forEach((fn) => fn(v));
+  }
+}
+
+// Health-check poller — runs every 5 s, marks backend up/down
+let _polling = false;
+export function startHealthPoll() {
+  if (_polling) return;
+  _polling = true;
+  const poll = async () => {
+    try {
+      await axios.get("/health", { timeout: 4000 });
+      _setConnected(true);
+    } catch {
+      _setConnected(false);
+    }
+  };
+  poll(); // immediate first check
+  setInterval(poll, 5000);
+}
+
+// Axios interceptor — update status on every response / error
+api.interceptors.response.use(
+  (res) => {
+    _setConnected(true);
+    return res;
+  },
+  (err) => {
+    if (!err.response) {
+      // Network error (ECONNREFUSED, timeout, etc.)
+      _setConnected(false);
+    }
+    return Promise.reject(err);
+  },
+);
+
 // Inference endpoints
 export const inference = {
   run: (text: string, modelName = "french") =>
@@ -39,10 +143,36 @@ export const analysis = {
       model_name: modelName,
     }),
 
+  neuronFingerprint: (
+    conceptName: string,
+    words: string[],
+    modelName = "french",
+  ) =>
+    api.post("/analysis/neuron-fingerprint", {
+      concept_name: conceptName,
+      examples: words,
+      model_name: modelName,
+    }),
+
   compare: (text: string, modelNames: string[]) =>
     api.post("/analysis/compare", { text, model_names: modelNames }),
 
   getConceptCategories: () => api.get("/analysis/concept-categories"),
+
+  /**
+   * Live synapse tracking: send a sentence through the model and get
+   * token-by-token x_sparse activations for specified neurons.
+   */
+  synapseTrack: (
+    sentence: string,
+    synapses: { layer: number; head: number; neuron: number }[],
+    modelName = "french",
+  ) =>
+    api.post("/analysis/synapse-track", {
+      sentence,
+      synapses,
+      model_name: modelName,
+    }),
 };
 
 // Model endpoints
@@ -87,5 +217,24 @@ export async function loadPlaybackJSON(filename: string) {
   return response.json();
 }
 
-// Health check
-export const health = () => api.get("/health");
+// Health check (hits root /health, NOT /api/health)
+export const health = () => axios.get("/health", { timeout: 4000 });
+
+ // Graph Brain endpoints
+export const graph = {
+  getClusters: (modelName: string, head = 0, beta = 1.0, maxNodes = 400) =>
+    api.get(`/graph/clusters/${modelName}`, {
+      params: { head, beta, max_nodes: maxNodes },
+      timeout: 60000,
+    }),
+
+  activate: (text: string, modelName = "french", head = 0, layer = -1) =>
+    api.post("/graph/activate", {
+      text,
+      model_name: modelName,
+      head,
+      layer,
+     }),
+
+  clearCache: () => api.delete("/graph/cache"),
+ };
