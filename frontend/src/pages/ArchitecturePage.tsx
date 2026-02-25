@@ -24,6 +24,7 @@ export function ArchitecturePage() {
   // === Sequential animation state ===
   const [currentTokenIdx, setCurrentTokenIdx] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
+  const [stepProgress, setStepProgress] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stepStartRef = useRef<number>(0);
 
