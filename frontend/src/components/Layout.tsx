@@ -56,9 +56,13 @@ export function Layout() {
   const [backendUp, setBackendUp] = useState(true);
 
   useEffect(() => {
-    startHealthPoll();
-    return onBackendStatus(setBackendUp);
-  }, []);
+  startHealthPoll();
+  const cleanup = onBackendStatus(setBackendUp);
+
+  return () => {
+    cleanup();  // cleanup’s return value is ignored, so React gets void
+  };
+}, []);
 
   return (
     <div
