@@ -1,364 +1,428 @@
 #!/usr/bin/env python3
 """
-BDH Model Merging Utility
+BDH Model Merging + Evaluation
 
-Merges two separately trained BDH models into a single polyglot model.
-This is a unique capability of BDH's scale-free architecture that
-transformers cannot achieve.
+Merges two BDH specialists, evaluates all models (including fine-tuned if available),
+and produces frontend JSON for the merge page.
 
-The merge works by concatenating the neuron spaces:
-- French model: neurons 0 to N-1
-- Portuguese model: neurons N to 2N-1
-- Merged model: neurons 0 to 2N-1
+Usage (basic merge):
+    python analysis/merge.py \
+        --model1 checkpoints/french_specialist/checkpoint_best.pt \
+        --model2 checkpoints/portuguese_specialist/checkpoint_best.pt \
+        --output checkpoints/merged_polyglot/checkpoint_best.pt
 
-This preserves the specialized knowledge in each model while creating
-a unified model that handles both domains.
-
-Usage:
-    python merge.py --model1 checkpoints/french/best.pt \
-                    --model2 checkpoints/portuguese/best.pt \
-                    --output checkpoints/merged_polyglot.pt
+Usage (with fine-tuned comparison):
+    python analysis/merge.py \
+        --model1 checkpoints/french_specialist/checkpoint_best.pt \
+        --model2 checkpoints/portuguese_specialist/checkpoint_best.pt \
+        --output checkpoints/merged_polyglot/checkpoint_best.pt \
+        --finetuned checkpoints/merged_finetuned/checkpoint_best.pt
 """
 
-import argparse
-import json
+import argparse, json, sys
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 from dataclasses import dataclass, asdict
 
+import numpy as np
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "training"))
-from bdh import BDH, BDHConfig, load_model
-
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "training"))
+from bdh import BDH, BDHConfig, ExtractionConfig, load_model
 
 @dataclass
 class MergeConfig:
-    """Configuration for model merging."""
-    model1_path: str
-    model2_path: str
-    output_path: str
-    model1_name: str = "french"
-    model2_name: str = "portuguese"
-    
-    # Merge strategy
-    merge_embeddings: str = "average"  # average, first, second
-    merge_lm_head: str = "average"  # average, first, second
+    model1_path: str = ""; model2_path: str = ""; output_path: str = ""
+    model1_name: str = "french"; model2_name: str = "portuguese"
+    merge_embeddings: str = "average"; merge_lm_head: str = "average"
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Built-in test data
+# ═══════════════════════════════════════════════════════════════════════
+FRENCH_TEST = [
+    "<F:en>The European Parliament has adopted the resolution on trade policy.<T:fr>Le Parlement européen a adopté la résolution sur la politique commerciale.",
+    "<F:en>We must ensure that all citizens have access to healthcare.<T:fr>Nous devons veiller à ce que tous les citoyens aient accès aux soins de santé.",
+    "<F:en>The Commission presented its annual report on economic growth.<T:fr>La Commission a présenté son rapport annuel sur la croissance économique.",
+    "<F:en>Mr President, I would like to raise a point of order.<T:fr>Monsieur le Président, je voudrais soulever une motion de procédure.",
+    "<F:en>This directive aims to protect the environment and public health.<T:fr>Cette directive vise à protéger l'environnement et la santé publique.",
+    "<F:en>The Council has reached an agreement on the new regulation.<T:fr>Le Conseil est parvenu à un accord sur le nouveau règlement.",
+    "<F:en>I believe this proposal will benefit all member states.<T:fr>Je crois que cette proposition profitera à tous les États membres.",
+    "<F:en>The rapporteur has done excellent work on this report.<T:fr>Le rapporteur a fait un excellent travail sur ce rapport.",
+    "<F:en>We need to strengthen cooperation between our institutions.<T:fr>Nous devons renforcer la coopération entre nos institutions.",
+    "<F:en>The budget for next year must be approved by December.<T:fr>Le budget pour l'année prochaine doit être approuvé avant décembre.",
+    "<F:en>Freedom of expression is a fundamental right in Europe.<T:fr>La liberté d'expression est un droit fondamental en Europe.",
+    "<F:en>The single market has been a great success for our continent.<T:fr>Le marché unique a été un grand succès pour notre continent.",
+]
 
-def load_checkpoint(path: str) -> Tuple[Dict[str, torch.Tensor], BDHConfig]:
-    """Load model checkpoint and extract config."""
-    checkpoint = torch.load(path, map_location="cpu")
-    
-    if "config" in checkpoint:
-        config = BDHConfig(**checkpoint["config"])
-        state_dict = checkpoint["model_state_dict"]
+PORTUGUESE_TEST = [
+    "<F:en>The European Parliament has adopted the resolution on trade policy.<T:pt>O Parlamento Europeu adoptou a resolução sobre a política comercial.",
+    "<F:en>We must ensure that all citizens have access to healthcare.<T:pt>Devemos assegurar que todos os cidadãos tenham acesso aos cuidados de saúde.",
+    "<F:en>The Commission presented its annual report on economic growth.<T:pt>A Comissão apresentou o seu relatório anual sobre o crescimento económico.",
+    "<F:en>Mr President, I would like to raise a point of order.<T:pt>Senhor Presidente, gostaria de levantar uma questão de ordem.",
+    "<F:en>This directive aims to protect the environment and public health.<T:pt>Esta directiva tem por objectivo proteger o ambiente e a saúde pública.",
+    "<F:en>The Council has reached an agreement on the new regulation.<T:pt>O Conselho chegou a acordo sobre o novo regulamento.",
+    "<F:en>I believe this proposal will benefit all member states.<T:pt>Creio que esta proposta beneficiará todos os Estados-Membros.",
+    "<F:en>The rapporteur has done excellent work on this report.<T:pt>O relator realizou um excelente trabalho sobre este relatório.",
+    "<F:en>We need to strengthen cooperation between our institutions.<T:pt>Precisamos de reforçar a cooperação entre as nossas instituições.",
+    "<F:en>The budget for next year must be approved by December.<T:pt>O orçamento para o próximo ano deve ser aprovado até Dezembro.",
+    "<F:en>Freedom of expression is a fundamental right in Europe.<T:pt>A liberdade de expressão é um direito fundamental na Europa.",
+    "<F:en>The single market has been a great success for our continent.<T:pt>O mercado único tem sido um grande êxito para o nosso continente.",
+]
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Load / Detect / Verify
+# ═══════════════════════════════════════════════════════════════════════
+def load_checkpoint(path):
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    if "config" in ckpt:
+        import dataclasses
+        valid = {f.name for f in dataclasses.fields(BDHConfig)}
+        cfg = {k: v for k, v in ckpt["config"].items() if k in valid}
+        config = BDHConfig(**cfg)
+        sd = ckpt["model_state_dict"]
     else:
-        state_dict = checkpoint
-        # Infer config from shapes
-        encoder_shape = state_dict["encoder"].shape
-        config = BDHConfig(
-            n_layer=8,  # Default
-            n_embd=encoder_shape[1],
-            n_head=encoder_shape[0],
-            mlp_internal_dim_multiplier=(
-                encoder_shape[2] * encoder_shape[0] // encoder_shape[1]
-            ),
-        )
-    
-    return state_dict, config
-
-
-def verify_compatible(config1: BDHConfig, config2: BDHConfig) -> bool:
-    """Verify two models can be merged."""
-    checks = [
-        ("n_layer", config1.n_layer == config2.n_layer),
-        ("n_embd", config1.n_embd == config2.n_embd),
-        ("n_head", config1.n_head == config2.n_head),
-        ("mlp_multiplier", config1.mlp_internal_dim_multiplier == config2.mlp_internal_dim_multiplier),
-        ("vocab_size", config1.vocab_size == config2.vocab_size),
-    ]
-    
-    all_pass = True
-    for name, passed in checks:
-        if not passed:
-            print(f"❌ Incompatible {name}: {getattr(config1, name)} vs {getattr(config2, name)}")
-            all_pass = False
+        sd = ckpt
+        if "encoder" in sd:
+            e = sd["encoder"]
+            config = BDHConfig(n_layer=6, n_embd=e.shape[1], n_head=e.shape[0],
+                             mlp_internal_dim_multiplier=(e.shape[2]*e.shape[0]//e.shape[1]))
         else:
-            print(f"✓ {name} matches")
-    
-    return all_pass
+            raise ValueError("Cannot infer config")
+    clean = {k.replace("_orig_mod.",""): v for k,v in sd.items()}
+    return clean, config
 
+def verify_compatible(c1, c2):
+    ok = True
+    for n,a,b in [("n_layer",c1.n_layer,c2.n_layer),("n_embd",c1.n_embd,c2.n_embd),
+                   ("n_head",c1.n_head,c2.n_head),("mlp",c1.mlp_internal_dim_multiplier,c2.mlp_internal_dim_multiplier)]:
+        if a!=b: print(f"  MISMATCH {n}: {a} vs {b}"); ok=False
+        else: print(f"  ok {n}={a}")
+    return ok
 
-def merge_models(
-    state1: Dict[str, torch.Tensor],
-    state2: Dict[str, torch.Tensor],
-    config1: BDHConfig,
-    merge_config: MergeConfig
-) -> Tuple[Dict[str, torch.Tensor], BDHConfig]:
-    """
-    Merge two BDH models by concatenating neuron spaces.
-    
-    The key insight from the BDH paper (Section 7.1):
-    - Encoder weights map D -> N (embedding to neuron space)
-    - Decoder weights map N*nh -> D (neuron space to embedding)
-    - We concatenate along the N dimension
-    
-    After merging:
-    - New N = 2 * old N
-    - French neurons occupy positions 0 to N-1
-    - Portuguese neurons occupy positions N to 2N-1
-    """
-    
-    print("\n🔀 Merging models...")
-    
-    merged_state = {}
-    
-    nh = config1.n_head
-    D = config1.n_embd
-    N = config1.n_neurons
-    
-    # === ENCODER ===
-    # Shape: (nh, D, N)
-    # Concatenate along N dimension -> (nh, D, 2N)
-    encoder1 = state1["encoder"]  # (nh, D, N)
-    encoder2 = state2["encoder"]  # (nh, D, N)
-    merged_state["encoder"] = torch.cat([encoder1, encoder2], dim=2)
-    print(f"  encoder: {encoder1.shape} + {encoder2.shape} -> {merged_state['encoder'].shape}")
-    
-    # === ENCODER_V ===
-    # Same as encoder
-    encoder_v1 = state1["encoder_v"]
-    encoder_v2 = state2["encoder_v"]
-    merged_state["encoder_v"] = torch.cat([encoder_v1, encoder_v2], dim=2)
-    print(f"  encoder_v: {encoder_v1.shape} + {encoder_v2.shape} -> {merged_state['encoder_v'].shape}")
-    
-    # === DECODER ===
-    # Shape: (nh*N, D)
-    # Concatenate along first dimension -> (2*nh*N, D)
-    decoder1 = state1["decoder"]  # (nh*N, D)
-    decoder2 = state2["decoder"]  # (nh*N, D)
-    merged_state["decoder"] = torch.cat([decoder1, decoder2], dim=0)
-    print(f"  decoder: {decoder1.shape} + {decoder2.shape} -> {merged_state['decoder'].shape}")
-    
-    # === EMBEDDINGS ===
-    # Shape: (vocab_size, D)
-    # Options: average, first, second
-    embed1 = state1["embed.weight"]
-    embed2 = state2["embed.weight"]
-    
-    if merge_config.merge_embeddings == "average":
-        merged_state["embed.weight"] = (embed1 + embed2) / 2
-    elif merge_config.merge_embeddings == "first":
-        merged_state["embed.weight"] = embed1
-    else:
-        merged_state["embed.weight"] = embed2
-    print(f"  embed: {merge_config.merge_embeddings} -> {merged_state['embed.weight'].shape}")
-    
-    # === LM_HEAD ===
-    # Shape: (D, vocab_size)
-    lm1 = state1["lm_head"]
-    lm2 = state2["lm_head"]
-    
-    if merge_config.merge_lm_head == "average":
-        merged_state["lm_head"] = (lm1 + lm2) / 2
-    elif merge_config.merge_lm_head == "first":
-        merged_state["lm_head"] = lm1
-    else:
-        merged_state["lm_head"] = lm2
-    print(f"  lm_head: {merge_config.merge_lm_head} -> {merged_state['lm_head'].shape}")
-    
-    # === ATTENTION FREQS ===
-    # RoPE frequencies need to be expanded for larger N
-    # Shape: (1, 1, 1, N) -> (1, 1, 1, 2N)
-    freqs1 = state1["attn.freqs"]
-    freqs2 = state2["attn.freqs"]
-    merged_state["attn.freqs"] = torch.cat([freqs1, freqs2], dim=3)
-    print(f"  attn.freqs: {freqs1.shape} + {freqs2.shape} -> {merged_state['attn.freqs'].shape}")
-    
-    # === Create merged config ===
-    merged_config = BDHConfig(
-        n_layer=config1.n_layer,
-        n_embd=config1.n_embd,
-        n_head=config1.n_head,
-        mlp_internal_dim_multiplier=config1.mlp_internal_dim_multiplier * 2,  # Doubled!
-        dropout=config1.dropout,
-        vocab_size=config1.vocab_size,
-    )
-    
-    print(f"\n📊 Merged model:")
-    print(f"  Original neurons per head: {N}")
-    print(f"  Merged neurons per head: {2 * N}")
-    print(f"  Total original neurons: {nh * N}")
-    print(f"  Total merged neurons: {2 * nh * N}")
-    
-    return merged_state, merged_config
+# ═══════════════════════════════════════════════════════════════════════
+#  Merge
+# ═══════════════════════════════════════════════════════════════════════
+def merge_models(s1, s2, c1, mc):
+    m = {}
+    nh,D,N = c1.n_head, c1.n_embd, c1.n_neurons
+    if "encoder" in s1:  # V1
+        m["encoder"] = torch.cat([s1["encoder"],s2["encoder"]],dim=2)
+        m["encoder_v"] = torch.cat([s1["encoder_v"],s2["encoder_v"]],dim=2)
+        m["decoder"] = torch.cat([s1["decoder"],s2["decoder"]],dim=0)
+        m["attn.freqs"] = torch.cat([s1["attn.freqs"],s2["attn.freqs"]],dim=3)
+    else:  # V2
+        for l in range(c1.n_layer):
+            m[f"encoders.{l}"] = torch.cat([s1[f"encoders.{l}"],s2[f"encoders.{l}"]],dim=2)
+            if f"encoders_v.{l}" in s1:
+                m[f"encoders_v.{l}"] = torch.cat([s1[f"encoders_v.{l}"],s2[f"encoders_v.{l}"]],dim=2)
+            m[f"decoders.{l}"] = torch.cat([s1[f"decoders.{l}"],s2[f"decoders.{l}"]],dim=0)
+        if "rho" in s1: m["rho"] = torch.cat([s1["rho"],s2["rho"]],dim=2)
+        if "attn.freqs" in s1: m["attn.freqs"] = torch.cat([s1["attn.freqs"],s2["attn.freqs"]],dim=3)
 
+    if "embed.weight" in s1: m["embed.weight"] = (s1["embed.weight"]+s2["embed.weight"])/2
+    if "lm_head" in s1: m["lm_head"] = (s1["lm_head"]+s2["lm_head"])/2
+    for k in s1:
+        if k not in m:
+            m[k] = ((s1[k]+s2[k])/2 if k in s2 and s1[k].shape==s2[k].shape else s1[k].clone())
 
-def create_heritage_map(config1: BDHConfig, merge_config: MergeConfig) -> Dict[str, Any]:
-    """
-    Create a map tracking which neurons came from which model.
-    
-    This is crucial for interpretability - we can trace any synapse
-    in the merged model back to its origin.
-    """
-    N = config1.n_neurons
-    nh = config1.n_head
-    
-    heritage = {
-        "model1_name": merge_config.model1_name,
-        "model2_name": merge_config.model2_name,
-        "neurons_per_head_per_model": N,
-        "total_neurons_per_model": N * nh,
-        "neuron_ranges": {
-            merge_config.model1_name: {
-                "per_head": [0, N - 1],
-                "description": f"Neurons 0-{N-1} in each head"
-            },
-            merge_config.model2_name: {
-                "per_head": [N, 2 * N - 1],
-                "description": f"Neurons {N}-{2*N-1} in each head"
-            }
-        },
-        "how_to_identify": {
-            "given_neuron_idx": "If idx < N: from model1, else: from model2",
-            "original_idx": "If from model2: original_idx = idx - N"
-        }
-    }
-    
-    return heritage
+    mc2 = BDHConfig(n_layer=c1.n_layer, n_embd=c1.n_embd, n_head=c1.n_head,
+                    mlp_internal_dim_multiplier=c1.mlp_internal_dim_multiplier*2,
+                    dropout=c1.dropout, vocab_size=c1.vocab_size)
+    print(f"  Merged: {N}->{2*N} N/head, {nh*N}->{2*nh*N} total")
+    return m, mc2
 
+def create_heritage_map(c1, mc):
+    N,nh = c1.n_neurons, c1.n_head
+    return {"model1_name":mc.model1_name, "model2_name":mc.model2_name,
+            "neurons_per_head_original":N, "neurons_per_head_merged":2*N,
+            "total_neurons_per_model":N*nh, "total_neurons_merged":2*N*nh,
+            "ranges":{mc.model1_name:{"start":0,"end":N-1}, mc.model2_name:{"start":N,"end":2*N-1}}}
 
-def validate_merged_model(
-    merged_state: Dict[str, torch.Tensor],
-    merged_config: BDHConfig,
-    device: str = "cpu"
-) -> bool:
-    """Validate the merged model works correctly."""
-    print("\n🔍 Validating merged model...")
-    
+def validate(ms, mc, dev):
     try:
-        # Create model with merged config
-        model = BDH(merged_config)
-        
-        # Load merged weights
-        model.load_state_dict(merged_state)
-        model.to(device)
-        model.eval()
-        
-        # Test forward pass
-        test_input = torch.randint(0, 256, (1, 64), device=device)
-        with torch.no_grad():
-            logits, _ = model(test_input)
-        
-        assert logits.shape == (1, 64, 256), f"Unexpected output shape: {logits.shape}"
-        
-        # Test generation
-        prompt = torch.tensor([[ord('H'), ord('e'), ord('l'), ord('l'), ord('o')]], device=device)
-        with torch.no_grad():
-            generated = model.generate(prompt, max_new_tokens=10, top_k=5)
-        
-        assert generated.shape[1] == 15, f"Generation failed: {generated.shape}"
-        
-        print("✅ Validation passed!")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Validation failed: {e}")
-        return False
+        model = BDH(mc); model.load_state_dict(ms, strict=False); model.to(dev).eval()
+        with torch.no_grad(): lo,_ = model(torch.randint(0,256,(1,32),device=dev))
+        assert lo.shape==(1,32,256); del model; print("  Validation OK"); return True
+    except Exception as e: print(f"  Validation FAILED: {e}"); return False
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Evaluation
+# ═══════════════════════════════════════════════════════════════════════
+@torch.no_grad()
+def eval_on_bytes(model, data_bytes, dev, bs=256):
+    data = np.frombuffer(data_bytes, dtype=np.uint8)
+    if len(data)<bs+1: return -1.0
+    total,count = 0.0, 0
+    n = min(40, len(data)//bs)
+    for i in range(n):
+        s = i*(len(data)//n)
+        if s+bs+1>len(data): break
+        x = torch.from_numpy(data[s:s+bs].astype(np.int64)).unsqueeze(0).to(dev)
+        y = torch.from_numpy(data[s+1:s+1+bs].astype(np.int64)).unsqueeze(0).to(dev)
+        _,loss = model(x,y)
+        if loss is not None: total+=loss.item(); count+=1
+    return total/max(count,1)
 
-def main():
-    parser = argparse.ArgumentParser(description="Merge two BDH models")
-    parser.add_argument("--model1", required=True, help="Path to first model checkpoint")
-    parser.add_argument("--model2", required=True, help="Path to second model checkpoint")
-    parser.add_argument("--output", required=True, help="Output path for merged model")
-    parser.add_argument("--name1", default="french", help="Name for first model")
-    parser.add_argument("--name2", default="portuguese", help="Name for second model")
-    parser.add_argument("--merge-embeddings", choices=["average", "first", "second"], default="average")
-    parser.add_argument("--merge-lm-head", choices=["average", "first", "second"], default="average")
-    parser.add_argument("--device", default="cpu")
-    
-    args = parser.parse_args()
-    
-    merge_config = MergeConfig(
-        model1_path=args.model1,
-        model2_path=args.model2,
-        output_path=args.output,
-        model1_name=args.name1,
-        model2_name=args.name2,
-        merge_embeddings=args.merge_embeddings,
-        merge_lm_head=args.merge_lm_head,
-    )
-    
-    print("=" * 60)
-    print("🐉 BDH Model Merger")
-    print("=" * 60)
-    print(f"Model 1: {args.model1} ({args.name1})")
-    print(f"Model 2: {args.model2} ({args.name2})")
-    print(f"Output: {args.output}")
-    print("=" * 60)
-    
-    # Load models
-    print("\n📂 Loading models...")
-    state1, config1 = load_checkpoint(args.model1)
-    state2, config2 = load_checkpoint(args.model2)
-    
-    print(f"Model 1: {config1.n_layer}L, {config1.n_embd}D, {config1.n_head}H, N={config1.n_neurons}")
-    print(f"Model 2: {config2.n_layer}L, {config2.n_embd}D, {config2.n_head}H, N={config2.n_neurons}")
-    
-    # Verify compatibility
-    print("\n🔍 Checking compatibility...")
-    if not verify_compatible(config1, config2):
-        print("\n❌ Models are incompatible for merging!")
-        return 1
-    
-    # Merge
-    merged_state, merged_config = merge_models(state1, state2, config1, merge_config)
-    
-    # Create heritage map
-    heritage = create_heritage_map(config1, merge_config)
-    
-    # Validate
-    if not validate_merged_model(merged_state, merged_config, args.device):
-        print("\n❌ Merged model validation failed!")
-        return 1
-    
-    # Save
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    checkpoint = {
-        "model_state_dict": merged_state,
-        "config": asdict(merged_config),
-        "heritage": heritage,
-        "merge_config": asdict(merge_config),
-        "source_models": {
-            args.name1: args.model1,
-            args.name2: args.model2,
+@torch.no_grad()
+def eval_on_file(model, path, dev, bs=256, nb=50, bsz=8):
+    if not Path(path).exists(): return -1.0
+    data = np.memmap(path, dtype=np.uint8, mode="r")
+    total,count = 0.0,0
+    for _ in range(nb):
+        ix = np.random.randint(0, len(data)-bs-1, size=bsz)
+        x = torch.stack([torch.from_numpy(data[i:i+bs].astype(np.int64)) for i in ix]).to(dev)
+        y = torch.stack([torch.from_numpy(data[i+1:i+1+bs].astype(np.int64)) for i in ix]).to(dev)
+        _,loss = model(x,y)
+        if loss is not None: total+=loss.item(); count+=1
+    return total/max(count,1)
+
+def eval_model(model, fv, pv, dev):
+    fb = "\n".join(FRENCH_TEST).encode("utf-8")
+    pb = "\n".join(PORTUGUESE_TEST).encode("utf-8")
+    use_f = Path(fv).exists() if fv else False
+    use_p = Path(pv).exists() if pv else False
+    fr = eval_on_file(model, fv, dev) if use_f else eval_on_bytes(model, fb, dev)
+    pt = eval_on_file(model, pv, dev) if use_p else eval_on_bytes(model, pb, dev)
+    return {"french_loss":round(fr,4) if fr>=0 else None, "portuguese_loss":round(pt,4) if pt>=0 else None}
+
+@torch.no_grad()
+def gen(model, prompt, dev, n=80):
+    t = torch.tensor([list(prompt.encode("utf-8"))], dtype=torch.long, device=dev)
+    o = model.generate(t, max_new_tokens=n, top_k=5, temperature=0.8)
+    return bytes(o[0].cpu().tolist()).decode("utf-8", errors="replace")
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Heritage Probe — neuron activation analysis on merged model
+# ═══════════════════════════════════════════════════════════════════════
+@torch.no_grad()
+def heritage_probe(model, heritage, dev):
+    """Run French and Portuguese text through the model and measure which
+    neuron bank (French-origin vs Portuguese-origin) activates for each.
+    Returns per-layer and summary statistics."""
+    N_orig = heritage["neurons_per_head_original"]  # boundary between banks
+    n_layers = model.config.n_layer
+
+    fr_text = "\n".join(FRENCH_TEST)
+    pt_text = "\n".join(PORTUGUESE_TEST)
+
+    results = {"french_input": {}, "portuguese_input": {}, "summary": {}}
+
+    for lang_label, text in [("french_input", fr_text), ("portuguese_input", pt_text)]:
+        tokens = torch.tensor([list(text.encode("utf-8")[:512])], dtype=torch.long, device=dev)
+        ext_cfg = ExtractionConfig(
+            capture_sparse_activations=True,
+            capture_attention_patterns=False,
+            capture_pre_relu=False,
+            capture_layer_outputs=False,
+        )
+        with model.extraction_mode(ext_cfg) as buf:
+            model(tokens)
+
+        layer_data = {}
+        for l in range(n_layers):
+            if l not in buf.x_sparse:
+                continue
+            # x_sparse shape: (1, nh, T, N_merged)  where N_merged = 2*N_orig
+            xs = buf.x_sparse[l][0]  # (nh, T, N_merged)
+            # Average activation across heads and time
+            act = xs.mean(dim=(0, 1))  # (N_merged,)
+            fr_act = act[:N_orig]  # French-origin neurons
+            pt_act = act[N_orig:]  # Portuguese-origin neurons
+            fr_active = (fr_act > 0).sum().item()
+            pt_active = (pt_act > 0).sum().item()
+            fr_energy = fr_act.sum().item()
+            pt_energy = pt_act.sum().item()
+            total_energy = fr_energy + pt_energy
+            layer_data[str(l)] = {
+                "french": {
+                    "origin": heritage["model1_name"],
+                    "active_count": fr_active,
+                    "total_count": int(N_orig),
+                    "activation_ratio": round(fr_energy / max(total_energy, 1e-8), 4),
+                },
+                "portuguese": {
+                    "origin": heritage["model2_name"],
+                    "active_count": pt_active,
+                    "total_count": int(N_orig),
+                    "activation_ratio": round(pt_energy / max(total_energy, 1e-8), 4),
+                },
+            }
+        # Summary across all layers
+        all_fr = sum(d["french"]["activation_ratio"] for d in layer_data.values())
+        all_pt = sum(d["portuguese"]["activation_ratio"] for d in layer_data.values())
+        total = all_fr + all_pt
+        results[lang_label] = {
+            "layers": layer_data,
+            "summary": {
+                "french_percentage": round(100 * all_fr / max(total, 1e-8), 2),
+                "portuguese_percentage": round(100 * all_pt / max(total, 1e-8), 2),
+                "dominant_heritage": heritage["model1_name"] if all_fr > all_pt else heritage["model2_name"],
+            }
         }
+
+    # Overall summary: when French input → French neurons dominate? And vice versa?
+    fr_on_fr = results["french_input"]["summary"]["french_percentage"]
+    pt_on_pt = results["portuguese_input"]["summary"]["portuguese_percentage"]
+    results["summary"] = {
+        "french_input_french_pct": fr_on_fr,
+        "french_input_portuguese_pct": round(100 - fr_on_fr, 2),
+        "portuguese_input_french_pct": round(100 - pt_on_pt, 2),
+        "portuguese_input_portuguese_pct": pt_on_pt,
+        "routing_quality": round((fr_on_fr + pt_on_pt) / 2, 2),
+        "clear_separation": fr_on_fr > 55 and pt_on_pt > 55,
     }
-    
-    torch.save(checkpoint, output_path)
-    print(f"\n💾 Saved merged model to: {output_path}")
-    
-    # Save heritage map as JSON for frontend
-    heritage_path = output_path.with_suffix(".heritage.json")
-    with open(heritage_path, "w") as f:
-        json.dump(heritage, f, indent=2)
-    print(f"📋 Saved heritage map to: {heritage_path}")
-    
-    print("\n" + "=" * 60)
-    print("✅ Merge complete!")
-    print("=" * 60)
-    print(f"\nMerged model: {merged_config.n_neurons * 2} neurons per head")
-    print(f"Heritage tracking: Neurons 0-{config1.n_neurons-1} = {args.name1}")
-    print(f"                   Neurons {config1.n_neurons}-{config1.n_neurons*2-1} = {args.name2}")
-    
+    return results
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Main
+# ═══════════════════════════════════════════════════════════════════════
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--model1", required=True); p.add_argument("--model2", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--name1", default="french"); p.add_argument("--name2", default="portuguese")
+    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--french-val", default="data/en-fr/val.bin")
+    p.add_argument("--portuguese-val", default="data/en-pt/val.bin")
+    p.add_argument("--finetuned", default="", help="Path to fine-tuned merged checkpoint")
+    p.add_argument("--skip-eval", action="store_true")
+    p.add_argument("--skip-merge", action="store_true", help="Skip merge, just evaluate existing models")
+    p.add_argument("--frontend-json", default="")
+    a = p.parse_args()
+
+    mc = MergeConfig(model1_path=a.model1, model2_path=a.model2, output_path=a.output,
+                     model1_name=a.name1, model2_name=a.name2)
+
+    print("="*60); print("BDH Model Merger"); print("="*60)
+
+    # Load source models
+    s1,c1 = load_checkpoint(a.model1); s2,c2 = load_checkpoint(a.model2)
+    print(f"  M1: {c1.n_layer}L {c1.n_embd}D {c1.n_head}H N={c1.n_neurons}")
+    print(f"  M2: {c2.n_layer}L {c2.n_embd}D {c2.n_head}H N={c2.n_neurons}")
+    if not verify_compatible(c1,c2): return 1
+
+    # Merge (or load existing)
+    if not a.skip_merge:
+        ms, mc2 = merge_models(s1, s2, c1, mc)
+        heritage = create_heritage_map(c1, mc)
+        if not validate(ms, mc2, a.device): return 1
+        # Save
+        op = Path(a.output); op.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"model_state_dict":ms, "config":asdict(mc2), "heritage":heritage,
+                     "merge_config":asdict(mc)}, op)
+        print(f"  Saved: {op}")
+    else:
+        ckpt = torch.load(a.output, map_location="cpu", weights_only=False)
+        import dataclasses
+        valid = {f.name for f in dataclasses.fields(BDHConfig)}
+        cfg = {k:v for k,v in ckpt["config"].items() if k in valid}
+        mc2 = BDHConfig(**cfg); ms = ckpt["model_state_dict"]
+        heritage = ckpt.get("heritage", create_heritage_map(c1, mc))
+
+    # Evaluate
+    ev = {}
+    probe_data = None
+    if not a.skip_eval:
+        print("\n  Evaluating...")
+        fv, pv = a.french_val, a.portuguese_val
+
+        # Specialist 1
+        m = load_model(a.model1, a.device)
+        ev[a.name1] = eval_model(m, fv, pv, a.device)
+        print(f"  {a.name1}: {ev[a.name1]}")
+        del m
+
+        # Specialist 2
+        m = load_model(a.model2, a.device)
+        ev[a.name2] = eval_model(m, fv, pv, a.device)
+        print(f"  {a.name2}: {ev[a.name2]}")
+        del m
+
+        # Merged (zero-shot)
+        mm = BDH(mc2); mm.load_state_dict(ms, strict=False); mm.to(a.device).eval()
+        ev["merged"] = eval_model(mm, fv, pv, a.device)
+        print(f"  merged: {ev['merged']}")
+        del mm
+
+        # Fine-tuned (if available)
+        if a.finetuned and Path(a.finetuned).exists():
+            ft = load_model(a.finetuned, a.device)
+            ev["finetuned"] = eval_model(ft, fv, pv, a.device)
+            print(f"  finetuned: {ev['finetuned']}")
+
+            # Heritage probe on fine-tuned model
+            print("\n  Running heritage probe on fine-tuned model...")
+            probe_data = heritage_probe(ft, heritage, a.device)  # noqa: F841 — used later for JSON
+            s = probe_data["summary"]
+            print(f"  French input  -> French neurons {s['french_input_french_pct']:.1f}% | Portuguese neurons {s['french_input_portuguese_pct']:.1f}%")
+            print(f"  Portuguese input -> French neurons {s['portuguese_input_french_pct']:.1f}% | Portuguese neurons {s['portuguese_input_portuguese_pct']:.1f}%")
+            print(f"  Routing quality: {s['routing_quality']:.1f}% | Clear separation: {s['clear_separation']}")
+            del ft
+
+    # Generate samples from all models
+    print("\n  Generating samples...")
+    m1 = load_model(a.model1, a.device); m2 = load_model(a.model2, a.device)
+    mm = BDH(mc2); mm.load_state_dict(ms, strict=False); mm.to(a.device).eval()
+    ft_model = None
+    if a.finetuned and Path(a.finetuned).exists():
+        ft_model = load_model(a.finetuned, a.device)
+
+    prompts = [("French prompt","Le parlement européen"),("Portuguese prompt","O parlamento europeu"),
+               ("English prompt","The European Parliament"),("Mixed context","Bonjour, como está")]
+    samples = []
+    for label, pr in prompts:
+        s = {"label":label, "prompt":pr,
+             "french_generated":gen(m1,pr,a.device), "portuguese_generated":gen(m2,pr,a.device),
+             "merged_generated":gen(mm,pr,a.device)}
+        if ft_model:
+            s["finetuned_generated"] = gen(ft_model, pr, a.device)
+        s["generated"] = s.get("finetuned_generated", s["merged_generated"])
+        samples.append(s)
+        print(f"  {label}:")
+        print(f"    {a.name1}: {s['french_generated'][:60]}...")
+        print(f"    {a.name2}: {s['portuguese_generated'][:60]}...")
+        print(f"    merged: {s['merged_generated'][:60]}...")
+        if "finetuned_generated" in s:
+            print(f"    finetuned: {s['finetuned_generated'][:60]}...")
+    del m1,m2,mm
+    if ft_model: del ft_model
+
+    # Frontend JSON
+    fjp = a.frontend_json or str(ROOT/"frontend"/"public"/"merge"/"merge_data.json")
+    Path(fjp).parent.mkdir(parents=True, exist_ok=True)
+    p1 = sum(v.numel() for v in s1.values()); p2 = sum(v.numel() for v in s2.values())
+    pm = sum(v.numel() for v in ms.values())
+
+    models_data = {
+        a.name1: {"name":a.name1.capitalize(), "flag":"\U0001f1eb\U0001f1f7","params":p1,
+                   "n_neurons":c1.n_neurons,"n_heads":c1.n_head,"n_layers":c1.n_layer,"n_embd":c1.n_embd},
+        a.name2: {"name":a.name2.capitalize(), "flag":"\U0001f1f5\U0001f1f9","params":p2,
+                   "n_neurons":c2.n_neurons,"n_heads":c2.n_head,"n_layers":c2.n_layer,"n_embd":c2.n_embd},
+        "merged": {"name":"Merged (zero-shot)","flag":"\U0001f504","params":pm,
+                    "n_neurons":mc2.n_neurons,"n_heads":mc2.n_head,"n_layers":mc2.n_layer,"n_embd":mc2.n_embd},
+    }
+    if "finetuned" in ev:
+        models_data["finetuned"] = {
+            "name":"Merged (fine-tuned)","flag":"\U0001f30d","params":pm,
+            "n_neurons":mc2.n_neurons,"n_heads":mc2.n_head,"n_layers":mc2.n_layer,"n_embd":mc2.n_embd}
+
+    # Include finetune metadata if available
+    finetune_info = None
+    if a.finetuned and Path(a.finetuned).exists():
+        ft_ckpt = torch.load(a.finetuned, map_location="cpu", weights_only=False)
+        finetune_info = ft_ckpt.get("finetune_info", None)
+        del ft_ckpt
+
+    fd = {"heritage":heritage, "models":models_data, "evaluation":ev, "samples":samples}
+    if probe_data:
+        fd["heritage_probe"] = probe_data
+    if finetune_info:
+        fd["finetune_info"] = finetune_info
+    with open(fjp,"w",encoding="utf-8") as f: json.dump(fd,f,indent=2,ensure_ascii=False)
+    print(f"\n  Frontend JSON: {fjp}")
+    print("="*60+"\n  Done!\n"+"="*60)
     return 0
 
-
-if __name__ == "__main__":
-    exit(main())
+if __name__=="__main__": exit(main())

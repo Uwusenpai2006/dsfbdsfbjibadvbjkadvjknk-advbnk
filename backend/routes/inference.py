@@ -77,7 +77,7 @@ class GenerateResponse(BaseModel):
 # =============================================================================
 
 @router.post("/run", response_model=InferenceResponse)
-async def run_inference(request: InferenceRequest, req: Request):
+def run_inference(request: InferenceRequest, req: Request):
     """
     Run inference with activation extraction.
     
@@ -175,7 +175,7 @@ async def run_inference(request: InferenceRequest, req: Request):
 
 
 @router.post("/generate", response_model=GenerateResponse)
-async def generate_text(request: GenerateRequest, req: Request):
+def generate_text(request: GenerateRequest, req: Request):
     """
     Generate text from a prompt.
     
@@ -218,7 +218,7 @@ async def generate_text(request: GenerateRequest, req: Request):
 
 
 @router.post("/extract-detailed")
-async def extract_detailed(request: InferenceRequest, req: Request):
+def extract_detailed(request: InferenceRequest, req: Request):
     """
     Extract detailed activation data for a single input.
     

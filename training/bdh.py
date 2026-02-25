@@ -34,6 +34,10 @@ class BDHConfig:
     n_head: int = 4  # nh: number of attention heads
     mlp_internal_dim_multiplier: int = 128  # N = D * this / n_head
     vocab_size: int = 256  # UTF-8 bytes
+    # V2 additions
+    per_layer_encoders: bool = False  # True = V2 per-layer encoder/decoder
+    rho_decay: float = 0.99  # EMA decay for persistent ρ buffer (0 = disabled)
+    rho_max: float = 5.0  # Maximum ρ magnitude (prevents runaway)
     
     @property
     def n_neurons(self) -> int:
@@ -270,14 +274,30 @@ class BDH(nn.Module):
         nh = config.n_head
         D = config.n_embd
         N = config.n_neurons
+        nL = config.n_layer
         
-        # Encoder/decoder projections
-        # encoder: D -> N (expand to sparse neuron space)
-        self.encoder = nn.Parameter(torch.zeros((nh, D, N)).normal_(std=0.02))
-        # encoder_v: D -> N (for value path)
-        self.encoder_v = nn.Parameter(torch.zeros((nh, D, N)).normal_(std=0.02))
-        # decoder: N*nh -> D (compress back to embedding space)
-        self.decoder = nn.Parameter(torch.zeros((nh * N, D)).normal_(std=0.02))
+        # Encoder/decoder projections — V1 (shared) or V2 (per-layer)
+        if config.per_layer_encoders:
+            # V2: Each layer gets its own encoder/decoder
+            self.encoders = nn.ParameterList([
+                nn.Parameter(torch.zeros(nh, D, N).normal_(std=0.02))
+                for _ in range(nL)
+            ])
+            self.encoders_v = nn.ParameterList([
+                nn.Parameter(torch.zeros(nh, D, N).normal_(std=0.02))
+                for _ in range(nL)
+            ])
+            self.decoders = nn.ParameterList([
+                nn.Parameter(torch.zeros(nh * N, D).normal_(std=0.02))
+                for _ in range(nL)
+            ])
+            # Persistent ρ buffer — Hebbian EMA accumulator
+            self.register_buffer('rho', torch.zeros(nL, nh, N))
+        else:
+            # V1: Single shared encoder/decoder across all layers
+            self.encoder = nn.Parameter(torch.zeros((nh, D, N)).normal_(std=0.02))
+            self.encoder_v = nn.Parameter(torch.zeros((nh, D, N)).normal_(std=0.02))
+            self.decoder = nn.Parameter(torch.zeros((nh * N, D)).normal_(std=0.02))
         
         # Attention module
         self.attn = Attention(config)
@@ -377,9 +397,19 @@ class BDH(nn.Module):
                 self._extraction_config.should_capture_layer(layer_idx)
             ) if extracting else False
             
+            # Get encoder/decoder for this layer (V1 shared or V2 per-layer)
+            if C.per_layer_encoders:
+                enc   = self.encoders[layer_idx]
+                enc_v = self.encoders_v[layer_idx]
+                dec   = self.decoders[layer_idx]
+            else:
+                enc   = self.encoder
+                enc_v = self.encoder_v
+                dec   = self.decoder
+            
             # === ENCODE: D -> N ===
             # Project to high-dimensional neuron space
-            x_latent = x @ self.encoder  # (B, nh, T, N)
+            x_latent = x @ enc  # (B, nh, T, N)
             
             if extracting and buffer and self._extraction_config.capture_pre_relu:
                 if self._extraction_config.should_capture_layer(layer_idx):
@@ -412,7 +442,7 @@ class BDH(nn.Module):
                 buffer.attention_output[layer_idx] = yKV.clone()
             
             # === ENCODE V: D -> N ===
-            y_latent = yKV @ self.encoder_v  # (B, nh, T, N)
+            y_latent = yKV @ enc_v  # (B, nh, T, N)
             
             if extracting and buffer and self._extraction_config.capture_pre_relu:
                 if self._extraction_config.should_capture_layer(layer_idx):
@@ -429,6 +459,22 @@ class BDH(nn.Module):
             # Element-wise multiplication creates sparse gating
             xy_sparse = x_sparse * y_sparse  # (B, nh, T, N)
             
+            # V2: Update ρ from RAW gate, then modulate
+            if C.per_layer_encoders and hasattr(self, 'rho'):
+                # Update ρ with EMA from raw gate BEFORE amplification
+                if self.training and not extracting:
+                    with torch.no_grad():
+                        gate_mean = xy_sparse.detach().mean(dim=(0, 2))  # (nh, N)
+                        self.rho[layer_idx] = (
+                            C.rho_decay * self.rho[layer_idx] +
+                            (1.0 - C.rho_decay) * gate_mean
+                        )
+                        self.rho[layer_idx].clamp_(-C.rho_max, C.rho_max)
+                
+                # Modulate gate by persistent ρ
+                rho_layer = self.rho[layer_idx].unsqueeze(0).unsqueeze(2)  # (1, nh, 1, N)
+                xy_sparse = xy_sparse * (1.0 + rho_layer)
+            
             # Dropout for regularization
             xy_sparse = self.drop(xy_sparse)
             
@@ -436,7 +482,7 @@ class BDH(nn.Module):
             # Project back to embedding dimension
             # Reshape: (B, nh, T, N) -> (B, 1, T, nh*N) -> (B, 1, T, D)
             yMLP = (
-                xy_sparse.transpose(1, 2).reshape(B, 1, T, N * nh) @ self.decoder
+                xy_sparse.transpose(1, 2).reshape(B, 1, T, N * nh) @ dec
             )
             y = self.ln(yMLP)
             
@@ -504,21 +550,23 @@ class BDH(nn.Module):
             Dictionary with nodes, edges, and statistics
         """
         with torch.no_grad():
-            # encoder: (nh, D, N), decoder: (nh*N, D)
-            # Reshape decoder to (nh, N, D)
             nh = self.config.n_head
             N = self.config.n_neurons
             D = self.config.n_embd
             
-            decoder_reshaped = self.decoder.view(nh, N, D)
+            # Use layer 0 encoder/decoder (V2) or shared (V1)
+            if self.config.per_layer_encoders:
+                encoder = self.encoders[0]
+                decoder = self.decoders[0]
+            else:
+                encoder = self.encoder
+                decoder = self.decoder
             
-            # Compute G = encoder @ decoder^T for each head
-            # This gives us (nh, D, D) - connections in embedding space
-            # Or (nh, N, N) if we do decoder @ encoder - connections in neuron space
+            decoder_reshaped = decoder.view(nh, N, D)
             
             # For neuron-to-neuron graph: G = decoder @ encoder
             # Shape: (nh, N, D) @ (nh, D, N) -> (nh, N, N)
-            G = torch.bmm(decoder_reshaped, self.encoder)  # (nh, N, N)
+            G = torch.bmm(decoder_reshaped, encoder)  # (nh, N, N)
             
             # Apply threshold to get adjacency
             G_abs = G.abs()
@@ -568,35 +616,69 @@ def create_model(
 
 
 def load_model(checkpoint_path: str, device: str = "cpu") -> BDH:
-    """Load a trained BDH model from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    """Load a trained BDH model from checkpoint. Supports V1 (shared) and V2 (per-layer) models."""
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
     # Handle both full checkpoint and state_dict only
     if "config" in checkpoint:
-        config = BDHConfig(**checkpoint["config"])
+        cfg_dict = checkpoint["config"]
         state_dict = checkpoint["model_state_dict"]
+        # Detect V2 from state dict keys even if config doesn't say so
+        is_v2_sd = any(k.startswith("encoders.") for k in state_dict)
+        if "per_layer_encoders" not in cfg_dict:
+            cfg_dict["per_layer_encoders"] = is_v2_sd
+        if "rho_decay" not in cfg_dict:
+            cfg_dict["rho_decay"] = 0.99
+        if "rho_max" not in cfg_dict:
+            cfg_dict["rho_max"] = 5.0
+        # Filter out any extra keys not in BDHConfig
+        valid_keys = {f.name for f in dataclasses.fields(BDHConfig)}
+        cfg_dict = {k: v for k, v in cfg_dict.items() if k in valid_keys}
+        config = BDHConfig(**cfg_dict)
     else:
-        # Infer config from state dict shapes
-        encoder_shape = checkpoint["encoder"].shape
-        n_head = encoder_shape[0]
-        n_embd = encoder_shape[1]
-        N = encoder_shape[2]
-        mlp_multiplier = (N * n_head) // n_embd
+        state_dict = checkpoint
+        # Strip _orig_mod. prefix from torch.compile() wrapped models
+        stripped = {}
+        for k, v in state_dict.items():
+            new_k = k.replace("_orig_mod.", "") if k.startswith("_orig_mod.") else k
+            stripped[new_k] = v
+        state_dict = stripped
+
+        # Detect V2 (per-layer) vs V1 (shared)
+        is_v2 = "encoders.0" in state_dict
         
-        # Count layers by looking at unique layer-specific keys
-        # (In this architecture, layers share weights, so we use config)
-        n_layer = 6  # Default, should be stored in checkpoint
+        if is_v2:
+            encoder_shape = state_dict["encoders.0"].shape
+            n_head = encoder_shape[0]
+            n_embd = encoder_shape[1]
+            N = encoder_shape[2]
+            mlp_multiplier = (N * n_head) // n_embd
+            n_layer = sum(1 for k in state_dict if k.startswith("encoders.") and k.endswith(".0") is False and "." in k)
+            # Count encoder layers properly
+            n_layer = max(int(k.split(".")[1]) for k in state_dict if k.startswith("encoders.")) + 1
+        else:
+            encoder_shape = state_dict["encoder"].shape
+            n_head = encoder_shape[0]
+            n_embd = encoder_shape[1]
+            N = encoder_shape[2]
+            mlp_multiplier = (N * n_head) // n_embd
+            n_layer = 6  # Default for V1
         
         config = BDHConfig(
             n_layer=n_layer,
             n_embd=n_embd,
             n_head=n_head,
             mlp_internal_dim_multiplier=mlp_multiplier,
+            per_layer_encoders=is_v2,
         )
-        state_dict = checkpoint
+    
+    # Strip _orig_mod. prefix in case it's in model_state_dict too
+    clean_sd = {}
+    for k, v in state_dict.items():
+        clean_sd[k.replace("_orig_mod.", "") if k.startswith("_orig_mod.") else k] = v
     
     model = BDH(config)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(clean_sd, strict=False)
     model.to(device)
     model.eval()
     

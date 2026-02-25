@@ -123,6 +123,7 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
           Live Inference
         </h3>
 
+<<<<<<< HEAD
         <div className="flex items-center gap-3">
           {/* HuggingFace status (PRIMARY) */}
           {isHfOnline === null ? (
@@ -143,6 +144,9 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
           )}
 
           {/* Local backend status (FALLBACK) */}
+=======
+        <div className="flex items-center gap-2">
+>>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
           {isServerOnline === null ? (
             <span className="text-[#4A5568] text-sm flex items-center gap-1">
               <Loader2 size={14} className="animate-spin" />
@@ -184,6 +188,13 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
             <AlertCircle size={16} />
             No backends available. HuggingFace may be waking up (~30s after inactivity).
           </p>
+<<<<<<< HEAD
+=======
+          <code className="block mt-2 p-2 bg-[#0B1216] rounded text-xs text-[#CBD5E0]">
+            python backend/live_server.py --model
+            checkpoints/french/french_best.pt
+          </code>
+>>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
         </motion.div>
       )}
 

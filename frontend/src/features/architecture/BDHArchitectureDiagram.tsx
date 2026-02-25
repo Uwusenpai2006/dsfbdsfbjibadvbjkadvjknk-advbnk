@@ -67,6 +67,10 @@ interface FrameData {
   hadamard_grid?: number[][];
   a_star_ds?: number[];
   a_star_norm?: number;
+  decoder_ds?: number[];
+  decoder_norm?: number;
+  decoder_mean?: number;
+  decoder_std?: number;
 }
 
 interface PlaybackData {
@@ -196,19 +200,19 @@ export function BDHArchitectureDiagram({
   }, [playbackData, currentLayer, frameData]);
 
   useEffect(() => {
-    // Steps are now fully controlled by parent — no internal auto-advance
-    if (!isAnimating) {
-      setFillProgress(1);
-      return;
-    }
-    // When animating, fillProgress is cosmetic (parent handles timing)
+    // Always animate fillProgress 0→1 for gradual data reveal on every step change
     setFillProgress(0);
     const startTime = Date.now();
-    const fillInterval = setInterval(() => {
-      setFillProgress(Math.min((Date.now() - startTime) / 2000, 1));
-    }, 30);
-    return () => clearInterval(fillInterval);
-  }, [isAnimating, currentStep]);
+    const duration = 2000; // 2s gradual reveal
+    const raf = { id: 0 };
+    const tick = () => {
+      const p = Math.min((Date.now() - startTime) / duration, 1);
+      setFillProgress(p);
+      if (p < 1) raf.id = requestAnimationFrame(tick);
+    };
+    raf.id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.id);
+  }, [currentStep]);
 
   const isActive = (s: number) => currentStep >= s;
   const isCurrent = (s: number) => currentStep === s;
@@ -216,11 +220,11 @@ export function BDHArchitectureDiagram({
     currentStep > s ? 1 : currentStep === s ? fillProgress : 0;
 
   /* ---- Layout constants ---- */
-  const W = 780;
+  const W = 900;
   const LX = 30; // left column x
-  const LW = 310; // left column width
-  const RX = 420; // right column x
-  const RW = 330; // right column width
+  const LW = 350; // left column width
+  const RX = 500; // right column x
+  const RW = 360; // right column width
   const CX = W / 2; // center x
 
   return (
@@ -228,7 +232,7 @@ export function BDHArchitectureDiagram({
       {/* ===== LEFT SIDEBAR ===== */}
       <div className="w-48 flex-shrink-0">
         <div className="glass-card p-3 sticky top-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">
+          <h3 className="text-sm font-semibold text-[#CBD5E0] mb-3">
             Architecture Flow
           </h3>
           <div className="space-y-1">
@@ -238,30 +242,30 @@ export function BDHArchitectureDiagram({
                 onClick={() =>
                   onStepChange ? onStepChange(idx) : setInternalStep(idx)
                 }
-                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-all ${
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-all ${
                   idx < currentStep
-                    ? "bg-purple-600/30 text-purple-300"
+                    ? "bg-[#2A7FFF]/20 text-[#2A7FFF]"
                     : idx === currentStep
-                      ? "bg-purple-600 text-white font-semibold"
-                      : "bg-gray-800/50 text-gray-500 hover:bg-gray-700/50"
+                      ? "bg-[#2A7FFF] text-white font-semibold"
+                      : "bg-white/[0.03] text-[#4A5568] hover:bg-white/[0.08]"
                 }`}
               >
                 <div
-                  className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
+                  className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold ${
                     idx < currentStep
-                      ? "bg-purple-500 text-white"
+                      ? "bg-[#2A7FFF] text-white"
                       : idx === currentStep
-                        ? "bg-white text-purple-600"
-                        : "bg-gray-700 text-gray-400"
+                        ? "bg-white text-[#2A7FFF]"
+                        : "bg-white/10 text-[#8B95A5]"
                   }`}
                 >
                   {idx}
                 </div>
                 <span className="truncate">{step.name}</span>
                 {idx === currentStep && isAnimating && (
-                  <div className="ml-auto w-8 h-1 bg-gray-700 rounded overflow-hidden">
+                  <div className="ml-auto w-8 h-1 bg-white/10 rounded overflow-hidden">
                     <div
-                      className="h-full bg-purple-400 transition-all"
+                      className="h-full bg-[#2A7FFF] transition-all"
                       style={{ width: `${fillProgress * 100}%` }}
                     />
                   </div>
@@ -269,9 +273,9 @@ export function BDHArchitectureDiagram({
               </button>
             ))}
           </div>
-          <div className="mt-4 pt-3 border-t border-gray-700">
-            <div className="text-xs text-gray-400 mb-1">Layer</div>
-            <div className="text-lg font-bold text-purple-400">
+          <div className="mt-4 pt-3 border-t border-white/10">
+            <div className="text-sm text-[#8B95A5] mb-1">Layer</div>
+            <div className="text-lg font-bold text-[#2A7FFF]">
               {currentLayer + 1} / {playbackData?.num_layers ?? 6}
             </div>
           </div>
@@ -281,9 +285,9 @@ export function BDHArchitectureDiagram({
       {/* ===== SVG ARCHITECTURE DIAGRAM ===== */}
       <div className="flex-1 min-w-0">
         <svg
-          viewBox={`0 0 ${W} 1380`}
+          viewBox={`0 0 ${W} 1650`}
           className="w-full"
-          style={{ maxHeight: "1200px" }}
+          style={{ maxHeight: "1500px" }}
         >
           <defs>
             <pattern
@@ -357,10 +361,10 @@ export function BDHArchitectureDiagram({
           {/* ===== TITLE ===== */}
           <text
             x={CX}
-            y="25"
+            y="28"
             textAnchor="middle"
             fill="#E5E7EB"
-            fontSize="15"
+            fontSize="16"
             fontWeight="bold"
           >
             BDH Architecture — Layer {currentLayer + 1}
@@ -368,21 +372,21 @@ export function BDHArchitectureDiagram({
           {frameData && (
             <text
               x={CX}
-              y="44"
+              y="48"
               textAnchor="middle"
               fill="#9CA3AF"
-              fontSize="12"
+              fontSize="15"
             >
               Token: "<tspan fill="#F59E0B">{frameData.token_char}</tspan>"
               (byte {frameData.token_byte}, position {frameData.token_idx})
             </text>
           )}
 
-          {/* ===== EMBEDDING (y=60, h=110) ===== */}
-          <g transform={`translate(${CX - 220}, 60)`}>
+          {/* ===== EMBEDDING (y=65, h=115) ===== */}
+          <g transform={`translate(${CX - 225}, 65)`}>
             <ArchBox
-              width={440}
-              height={110}
+              width={450}
+              height={115}
               title="Embedding"
               gradient={`url(#gp-${uniqueId})`}
               isActive={isActive(1)}
@@ -392,10 +396,10 @@ export function BDHArchitectureDiagram({
               {isActive(1) && frameData?.embedding ? (
                 <g>
                   <text
-                    x="22"
+                    x="25"
                     y="36"
                     fill="#C4B5FD"
-                    fontSize="11"
+                    fontSize="14"
                     fontFamily="monospace"
                   >
                     byte {frameData.embedding.byte_value} → v* ∈ ℝ{config.d}
@@ -403,39 +407,41 @@ export function BDHArchitectureDiagram({
                   {frameData.embedding.vector_ds ? (
                     <HeatmapStrip
                       values={frameData.embedding.vector_ds}
-                      x={22}
+                      x={25}
                       y={44}
-                      width={396}
+                      width={400}
                       height={26}
+                      progress={getProgress(1)}
                     />
                   ) : (
                     <rect
-                      x="22"
+                      x="25"
                       y="44"
-                      width="396"
+                      width="400"
                       height="26"
                       fill="#1F2937"
                       rx="2"
                     />
                   )}
-                  <text x="22" y="86" fill="#6B7280" fontSize="8">
+                  <text x="25" y="86" fill="#6B7280" fontSize="11">
                     ← negative (blue)
                   </text>
                   <text
-                    x="418"
+                    x="425"
                     y="86"
                     textAnchor="end"
                     fill="#6B7280"
-                    fontSize="8"
+                    fontSize="11"
                   >
                     positive (red) →
                   </text>
                   <text
-                    x="22"
-                    y="100"
+                    x="25"
+                    y="102"
                     fill="#9CA3AF"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
+                    opacity={Math.min(1, getProgress(1) * 2)}
                   >
                     ‖v*‖={frameData.embedding.norm.toFixed(2)} μ=
                     {frameData.embedding.mean.toFixed(3)} σ=
@@ -444,11 +450,11 @@ export function BDHArchitectureDiagram({
                 </g>
               ) : (
                 <text
-                  x="220"
-                  y="60"
+                  x="225"
+                  y="65"
                   textAnchor="middle"
                   fill="#9CA3AF"
-                  fontSize="12"
+                  fontSize="14"
                 >
                   w_t → v* ∈ ℝ^{config.d}
                 </text>
@@ -456,13 +462,13 @@ export function BDHArchitectureDiagram({
             </ArchBox>
           </g>
 
-          <FlowArrow x1={CX} y1={170} x2={CX} y2={185} active={isActive(1)} />
+          <FlowArrow x1={CX} y1={180} x2={CX} y2={212} active={isActive(1)} />
 
-          {/* ===== LAYERNORM (y=185, h=48) ===== */}
-          <g transform={`translate(${CX - 195}, 185)`}>
+          {/* ===== LAYERNORM (y=212, h=55) ===== */}
+          <g transform={`translate(${CX - 205}, 212)`}>
             <ArchBox
-              width={390}
-              height={48}
+              width={410}
+              height={55}
               title="LayerNorm"
               gradient={`url(#go-${uniqueId})`}
               isActive={isActive(2)}
@@ -478,42 +484,44 @@ export function BDHArchitectureDiagram({
                     x="18"
                     y="30"
                     fill="#9CA3AF"
-                    fontSize="7"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     Raw
                   </text>
                   <HeatmapStrip
                     values={frameData.embedding.pre_ln_ds}
-                    x={40}
+                    x={42}
                     y={23}
-                    width={140}
+                    width={148}
                     height={10}
+                    progress={getProgress(2)}
                   />
                   {/* After LN strip */}
                   <text
                     x="200"
                     y="30"
                     fill="#FCD34D"
-                    fontSize="7"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     LN'd
                   </text>
                   <HeatmapStrip
                     values={frameData.embedding.vector_ds}
-                    x={222}
+                    x={230}
                     y={23}
-                    width={140}
+                    width={150}
                     height={10}
+                    progress={getProgress(2)}
                   />
                   {/* Stats */}
                   <text
-                    x="195"
-                    y="44"
+                    x="205"
+                    y="48"
                     textAnchor="middle"
                     fill="#6B7280"
-                    fontSize="7"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     ‖v‖ {frameData.embedding.pre_ln_norm?.toFixed(1)} →{" "}
@@ -524,11 +532,11 @@ export function BDHArchitectureDiagram({
                 </g>
               ) : (
                 <text
-                  x="195"
-                  y="34"
+                  x="205"
+                  y="38"
                   textAnchor="middle"
                   fill="#FCD34D"
-                  fontSize="11"
+                  fontSize="13"
                   fontFamily="monospace"
                 >
                   v* = (v* − μ) / σ
@@ -538,74 +546,74 @@ export function BDHArchitectureDiagram({
           </g>
 
           {/* ===== BRANCH ARROWS ===== */}
-          <FlowArrow x1={CX} y1={233} x2={CX} y2={248} active={isActive(2)} />
+          <FlowArrow x1={CX} y1={267} x2={CX} y2={280} active={isActive(2)} />
           {/* Left branch to x-path */}
           <path
-            d={`M ${CX} 248 L ${CX} 255 L ${LX + LW / 2} 255 L ${LX + LW / 2} 268`}
+            d={`M ${CX} 280 L ${CX} 288 L ${LX + LW / 2} 288 L ${LX + LW / 2} 310`}
             stroke={isActive(2) ? "#8B5CF6" : "#374151"}
-            strokeWidth="2"
+            strokeWidth="2.5"
             fill="none"
             opacity={isActive(2) ? 1 : 0.15}
           />
           {isActive(2) && (
             <path
-              d={`M ${CX} 248 L ${CX} 255 L ${LX + LW / 2} 255 L ${LX + LW / 2} 268`}
+              d={`M ${CX} 280 L ${CX} 288 L ${LX + LW / 2} 288 L ${LX + LW / 2} 310`}
               stroke="#C4B5FD"
-              strokeWidth="2"
-              strokeDasharray="4 8"
+              strokeWidth="2.5"
+              strokeDasharray="5 9"
               fill="none"
               opacity="0.4"
             >
               <animate
                 attributeName="stroke-dashoffset"
-                from="12"
+                from="14"
                 to="0"
-                dur="0.6s"
+                dur="0.8s"
                 repeatCount="indefinite"
               />
             </path>
           )}
           {/* Right branch to attention */}
           <path
-            d={`M ${CX} 248 L ${CX} 255 L ${RX + RW / 2} 255 L ${RX + RW / 2} 268`}
+            d={`M ${CX} 280 L ${CX} 288 L ${RX + RW / 2} 288 L ${RX + RW / 2} 310`}
             stroke={isActive(5) ? "#06B6D4" : "#374151"}
-            strokeWidth="2"
+            strokeWidth="2.5"
             fill="none"
-            strokeDasharray="4 2"
+            strokeDasharray="5 3"
             opacity={isActive(5) ? 1 : 0.15}
           />
           {isActive(5) && (
             <path
-              d={`M ${CX} 248 L ${CX} 255 L ${RX + RW / 2} 255 L ${RX + RW / 2} 268`}
+              d={`M ${CX} 280 L ${CX} 288 L ${RX + RW / 2} 288 L ${RX + RW / 2} 310`}
               stroke="#67E8F9"
-              strokeWidth="2"
-              strokeDasharray="4 8"
+              strokeWidth="2.5"
+              strokeDasharray="5 9"
               fill="none"
               opacity="0.4"
             >
               <animate
                 attributeName="stroke-dashoffset"
-                from="12"
+                from="14"
                 to="0"
-                dur="0.6s"
+                dur="0.8s"
                 repeatCount="indefinite"
               />
             </path>
           )}
           <text
             x={LX + LW / 2 + 30}
-            y="264"
+            y="305"
             fill={isActive(2) ? "#9CA3AF" : "#374151"}
-            fontSize="9"
+            fontSize="12"
             opacity={isActive(2) ? 1 : 0.3}
           >
             to x-path
           </text>
           <text
             x={RX + RW / 2 - 80}
-            y="264"
+            y="305"
             fill={isActive(5) ? "#67E8F9" : "#374151"}
-            fontSize="9"
+            fontSize="12"
             opacity={isActive(5) ? 1 : 0.3}
           >
             to attention (v*)
@@ -615,11 +623,11 @@ export function BDHArchitectureDiagram({
           {/* LEFT COLUMN: x-path                                              */}
           {/* ================================================================ */}
 
-          {/* ===== LINEAR Dₓ (y=268, h=120) ===== */}
-          <g transform={`translate(${LX}, 268)`}>
+          {/* ===== LINEAR Dₓ (y=310, h=125) ===== */}
+          <g transform={`translate(${LX}, 310)`}>
             <ArchBox
               width={LW}
-              height={120}
+              height={125}
               title="Linear Dₓ"
               gradient={`url(#go-${uniqueId})`}
               isActive={isActive(3)}
@@ -634,7 +642,7 @@ export function BDHArchitectureDiagram({
                     y="34"
                     textAnchor="middle"
                     fill="#FCD34D"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     x = v* @ E ({config.d}→{config.n})
@@ -645,12 +653,13 @@ export function BDHArchitectureDiagram({
                     y={42}
                     width={LW - 40}
                     height={44}
+                    progress={getProgress(3)}
                   />
                   <text
                     x="20"
                     y="98"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     range [{frameData.x_pre_relu.min.toFixed(1)},{" "}
@@ -660,7 +669,7 @@ export function BDHArchitectureDiagram({
                     x="20"
                     y="112"
                     fill="#F59E0B"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     {frameData.x_pre_relu.positive_count}/
@@ -679,7 +688,7 @@ export function BDHArchitectureDiagram({
                   y="65"
                   textAnchor="middle"
                   fill="#FCD34D"
-                  fontSize="11"
+                  fontSize="13"
                   fontFamily="monospace"
                 >
                   x = v* @ E ({config.d}→{config.n})
@@ -690,17 +699,17 @@ export function BDHArchitectureDiagram({
 
           <FlowArrow
             x1={LX + LW / 2}
-            y1={388}
+            y1={435}
             x2={LX + LW / 2}
-            y2={405}
+            y2={468}
             active={isActive(3)}
           />
 
-          {/* ===== RELU x (y=405, h=155) ===== */}
-          <g transform={`translate(${LX}, 405)`}>
+          {/* ===== RELU x (y=468, h=160) ===== */}
+          <g transform={`translate(${LX}, 468)`}>
             <ArchBox
               width={LW}
-              height={155}
+              height={160}
               title="ReLU (x-path)"
               gradient={`url(#gr-${uniqueId})`}
               isActive={isActive(4)}
@@ -714,7 +723,7 @@ export function BDHArchitectureDiagram({
                     y="32"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     x_sparse = max(0, x)
@@ -726,6 +735,7 @@ export function BDHArchitectureDiagram({
                     width={LW - 36}
                     height={52}
                     hue="red"
+                    progress={getProgress(4)}
                   />
                   {/* Sparsity bar */}
                   <rect
@@ -739,7 +749,9 @@ export function BDHArchitectureDiagram({
                   <rect
                     x="18"
                     y="98"
-                    width={(LW - 36) * (1 - frameData.x_sparsity)}
+                    width={
+                      (LW - 36) * (1 - frameData.x_sparsity) * getProgress(4)
+                    }
                     height="7"
                     fill="#EF4444"
                     rx="3"
@@ -749,7 +761,7 @@ export function BDHArchitectureDiagram({
                     y="118"
                     textAnchor="middle"
                     fill="#FFF"
-                    fontSize="11"
+                    fontSize="13"
                     fontWeight="bold"
                   >
                     {(frameData.x_sparsity * 100).toFixed(1)}% sparse
@@ -759,7 +771,7 @@ export function BDHArchitectureDiagram({
                     y="132"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                   >
                     {frameData.x_active_count ??
                       Math.round(
@@ -773,7 +785,7 @@ export function BDHArchitectureDiagram({
                         x="18"
                         y="146"
                         fill="#F87171"
-                        fontSize="8"
+                        fontSize="11"
                         fontFamily="monospace"
                       >
                         strongest: [H{frameData.x_top_neurons[0]?.head},
@@ -789,7 +801,7 @@ export function BDHArchitectureDiagram({
                     y="55"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="11"
+                    fontSize="13"
                   >
                     Sparsity: {(frameData.x_sparsity * 100).toFixed(1)}%
                   </text>
@@ -798,7 +810,7 @@ export function BDHArchitectureDiagram({
                     y="75"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="10"
+                    fontSize="12"
                   >
                     {frameData.x_active_count ?? "?"} / {config.total} active
                   </text>
@@ -809,7 +821,7 @@ export function BDHArchitectureDiagram({
                   y="70"
                   textAnchor="middle"
                   fill="#FCA5A5"
-                  fontSize="11"
+                  fontSize="13"
                 >
                   x_sparse = ReLU(x) → ~95% zeros
                 </text>
@@ -818,10 +830,10 @@ export function BDHArchitectureDiagram({
             {/* x_l label */}
             <text
               x={LW / 2}
-              y="172"
+              y="178"
               textAnchor="middle"
               fill={isActive(4) ? "#C4B5FD" : "#374151"}
-              fontSize="12"
+              fontSize="15"
               fontWeight="bold"
               opacity={isActive(4) ? 1 : 0.3}
             >
@@ -834,36 +846,36 @@ export function BDHArchitectureDiagram({
 
           {/* Connection: x_l → ρ Memory (x as query) */}
           <path
-            d={`M ${LX + LW / 2} 582 L ${LX + LW / 2} 600 L ${RX + RW / 2} 600 L ${RX + RW / 2} 530`}
+            d={`M ${LX + LW / 2} 648 L ${LX + LW / 2} 668 L ${RX + RW / 2} 668 L ${RX + RW / 2} 575`}
             stroke={isActive(5) ? "#8B5CF6" : "#374151"}
-            strokeWidth="2"
+            strokeWidth="2.5"
             fill="none"
             opacity={isActive(5) ? 1 : 0.1}
           />
           {isActive(5) && (
             <path
-              d={`M ${LX + LW / 2} 582 L ${LX + LW / 2} 600 L ${RX + RW / 2} 600 L ${RX + RW / 2} 530`}
+              d={`M ${LX + LW / 2} 648 L ${LX + LW / 2} 668 L ${RX + RW / 2} 668 L ${RX + RW / 2} 575`}
               stroke="#C4B5FD"
-              strokeWidth="2"
-              strokeDasharray="4 8"
+              strokeWidth="2.5"
+              strokeDasharray="5 9"
               fill="none"
               opacity="0.4"
             >
               <animate
                 attributeName="stroke-dashoffset"
-                from="12"
+                from="14"
                 to="0"
-                dur="0.8s"
+                dur="1s"
                 repeatCount="indefinite"
               />
             </path>
           )}
           <text
             x={CX}
-            y="615"
+            y="682"
             textAnchor="middle"
             fill={isActive(5) ? "#9CA3AF" : "#374151"}
-            fontSize="9"
+            fontSize="12"
             opacity={isActive(5) ? 1 : 0.2}
           >
             x
@@ -875,26 +887,26 @@ export function BDHArchitectureDiagram({
 
           {/* Connection: x_l down to Hadamard */}
           <path
-            d={`M ${LX + LW / 2} 600 L ${LX + LW / 2} 1020 L ${CX - 60} 1020`}
+            d={`M ${LX + LW / 2} 668 L ${LX + LW / 2} 1130 L ${CX - 65} 1130`}
             stroke={isActive(9) ? "#8B5CF6" : "#374151"}
-            strokeWidth="2"
+            strokeWidth="2.5"
             fill="none"
             opacity={isActive(9) ? 1 : 0.1}
           />
           {isActive(9) && (
             <path
-              d={`M ${LX + LW / 2} 600 L ${LX + LW / 2} 1020 L ${CX - 60} 1020`}
+              d={`M ${LX + LW / 2} 668 L ${LX + LW / 2} 1130 L ${CX - 65} 1130`}
               stroke="#C4B5FD"
-              strokeWidth="2"
-              strokeDasharray="4 8"
+              strokeWidth="2.5"
+              strokeDasharray="5 9"
               fill="none"
               opacity="0.3"
             >
               <animate
                 attributeName="stroke-dashoffset"
-                from="12"
+                from="14"
                 to="0"
-                dur="0.8s"
+                dur="1s"
                 repeatCount="indefinite"
               />
             </path>
@@ -904,11 +916,11 @@ export function BDHArchitectureDiagram({
           {/* RIGHT COLUMN: attention → y-path                                 */}
           {/* ================================================================ */}
 
-          {/* ===== ρ MEMORY STATE (y=268, h=255) ===== */}
-          <g transform={`translate(${RX}, 268)`}>
+          {/* ===== ρ MEMORY STATE (y=310, h=260) ===== */}
+          <g transform={`translate(${RX}, 310)`}>
             <ArchBox
               width={RW}
-              height={255}
+              height={260}
               title="ρ Memory State"
               gradient={`url(#gc-${uniqueId})`}
               isActive={isActive(5)}
@@ -920,7 +932,7 @@ export function BDHArchitectureDiagram({
                 y="30"
                 textAnchor="middle"
                 fill="#67E8F9"
-                fontSize="10"
+                fontSize="12"
                 fontFamily="monospace"
               >
                 ρ = x
@@ -949,6 +961,7 @@ export function BDHArchitectureDiagram({
                   y={38}
                   width={RW - 30}
                   height={170}
+                  progress={getProgress(5)}
                 />
               ) : (
                 <text
@@ -956,7 +969,7 @@ export function BDHArchitectureDiagram({
                   y="130"
                   textAnchor="middle"
                   fill="#67E8F9"
-                  fontSize="10"
+                  fontSize="12"
                 >
                   Attention score matrix accumulates
                 </text>
@@ -964,13 +977,13 @@ export function BDHArchitectureDiagram({
               {isActive(5) && rhoMatrix && frameData && (
                 <text
                   x={RW / 2}
-                  y="225"
+                  y="248"
                   textAnchor="middle"
                   fill="#6B7280"
-                  fontSize="8"
+                  fontSize="11"
                 >
                   Row {frameData.token_idx} = how token "{frameData.token_char}"
-                  attends to past
+                  attends to past · cols = keys · rows = queries
                 </text>
               )}
               {!rhoMatrix && (
@@ -979,20 +992,9 @@ export function BDHArchitectureDiagram({
                   y="150"
                   textAnchor="middle"
                   fill="#475569"
-                  fontSize="9"
+                  fontSize="11"
                 >
                   Each row shows attention from token to all past tokens.
-                </text>
-              )}
-              {isActive(5) && rhoMatrix && frameData && (
-                <text
-                  x={RW / 2}
-                  y="240"
-                  textAnchor="middle"
-                  fill="#475569"
-                  fontSize="8"
-                >
-                  ↑ cols = keys (past tokens) · rows = queries
                 </text>
               )}
             </ArchBox>
@@ -1000,17 +1002,17 @@ export function BDHArchitectureDiagram({
 
           <FlowArrow
             x1={RX + RW / 2}
-            y1={523}
+            y1={570}
             x2={RX + RW / 2}
-            y2={540}
+            y2={605}
             active={isActive(5)}
           />
 
-          {/* ===== a* READOUT (y=540, h=90) ===== */}
-          <g transform={`translate(${RX}, 540)`}>
+          {/* ===== a* READOUT (y=605, h=95) ===== */}
+          <g transform={`translate(${RX}, 605)`}>
             <ArchBox
               width={RW}
-              height={90}
+              height={95}
               title="a* Readout"
               gradient={`url(#gc-${uniqueId})`}
               isActive={isActive(6)}
@@ -1022,7 +1024,7 @@ export function BDHArchitectureDiagram({
                 y="30"
                 textAnchor="middle"
                 fill="#67E8F9"
-                fontSize="10"
+                fontSize="12"
                 fontFamily="monospace"
               >
                 a* = LN(ρ · v*) → ℝ
@@ -1038,12 +1040,13 @@ export function BDHArchitectureDiagram({
                     y={38}
                     width={RW - 36}
                     height={20}
+                    progress={getProgress(6)}
                   />
                   <text
                     x="18"
                     y="72"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     ‖a*‖ = {frameData.a_star_norm?.toFixed(3) ?? "—"}
@@ -1053,7 +1056,7 @@ export function BDHArchitectureDiagram({
                     y="72"
                     textAnchor="end"
                     fill="#475569"
-                    fontSize="8"
+                    fontSize="11"
                   >
                     {frameData.token_idx === 0
                       ? "no past tokens → a*≈0"
@@ -1066,7 +1069,7 @@ export function BDHArchitectureDiagram({
                   y="55"
                   textAnchor="middle"
                   fill="#475569"
-                  fontSize="9"
+                  fontSize="11"
                 >
                   Output of reading from ρ memory
                 </text>
@@ -1076,17 +1079,17 @@ export function BDHArchitectureDiagram({
 
           <FlowArrow
             x1={RX + RW / 2}
-            y1={630}
+            y1={700}
             x2={RX + RW / 2}
-            y2={648}
+            y2={735}
             active={isActive(6)}
           />
 
-          {/* ===== LINEAR Dᵧ (y=648, h=120) ===== */}
-          <g transform={`translate(${RX}, 648)`}>
+          {/* ===== LINEAR Dᵧ (y=735, h=125) ===== */}
+          <g transform={`translate(${RX}, 735)`}>
             <ArchBox
               width={RW}
-              height={120}
+              height={125}
               title="Linear Dᵧ"
               gradient={`url(#go-${uniqueId})`}
               isActive={isActive(7)}
@@ -1101,7 +1104,7 @@ export function BDHArchitectureDiagram({
                     y="34"
                     textAnchor="middle"
                     fill="#FCD34D"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     y = a* @ Ev ({config.d}→{config.n})
@@ -1112,12 +1115,13 @@ export function BDHArchitectureDiagram({
                     y={42}
                     width={RW - 40}
                     height={44}
+                    progress={getProgress(7)}
                   />
                   <text
                     x="20"
                     y="98"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     range [{frameData.y_pre_relu.min.toFixed(1)},{" "}
@@ -1127,7 +1131,7 @@ export function BDHArchitectureDiagram({
                     x="20"
                     y="112"
                     fill="#F59E0B"
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="monospace"
                   >
                     {frameData.y_pre_relu.positive_count}/
@@ -1146,7 +1150,7 @@ export function BDHArchitectureDiagram({
                   y="65"
                   textAnchor="middle"
                   fill="#FCD34D"
-                  fontSize="11"
+                  fontSize="13"
                   fontFamily="monospace"
                 >
                   y = a* @ Ev ({config.d}→{config.n})
@@ -1157,17 +1161,17 @@ export function BDHArchitectureDiagram({
 
           <FlowArrow
             x1={RX + RW / 2}
-            y1={768}
+            y1={860}
             x2={RX + RW / 2}
-            y2={785}
+            y2={895}
             active={isActive(7)}
           />
 
-          {/* ===== RELU y (y=785, h=155) ===== */}
-          <g transform={`translate(${RX}, 785)`}>
+          {/* ===== RELU y (y=895, h=160) ===== */}
+          <g transform={`translate(${RX}, 895)`}>
             <ArchBox
               width={RW}
-              height={155}
+              height={160}
               title="ReLU (y-path)"
               gradient={`url(#gr-${uniqueId})`}
               isActive={isActive(8)}
@@ -1181,7 +1185,7 @@ export function BDHArchitectureDiagram({
                     y="32"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="10"
+                    fontSize="12"
                     fontFamily="monospace"
                   >
                     y_sparse = max(0, y)
@@ -1193,6 +1197,7 @@ export function BDHArchitectureDiagram({
                     width={RW - 36}
                     height={52}
                     hue="green"
+                    progress={getProgress(8)}
                   />
                   <rect
                     x="18"
@@ -1205,7 +1210,9 @@ export function BDHArchitectureDiagram({
                   <rect
                     x="18"
                     y="98"
-                    width={(RW - 36) * (1 - frameData.y_sparsity)}
+                    width={
+                      (RW - 36) * (1 - frameData.y_sparsity) * getProgress(8)
+                    }
                     height="7"
                     fill="#10B981"
                     rx="3"
@@ -1215,7 +1222,7 @@ export function BDHArchitectureDiagram({
                     y="118"
                     textAnchor="middle"
                     fill="#FFF"
-                    fontSize="11"
+                    fontSize="13"
                     fontWeight="bold"
                   >
                     {(frameData.y_sparsity * 100).toFixed(1)}% sparse
@@ -1225,7 +1232,7 @@ export function BDHArchitectureDiagram({
                     y="132"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="9"
+                    fontSize="11"
                   >
                     {frameData.y_active_count ??
                       Math.round(
@@ -1239,7 +1246,7 @@ export function BDHArchitectureDiagram({
                         x="18"
                         y="146"
                         fill="#F87171"
-                        fontSize="8"
+                        fontSize="11"
                         fontFamily="monospace"
                       >
                         strongest: [H{frameData.y_top_neurons[0]?.head},
@@ -1255,7 +1262,7 @@ export function BDHArchitectureDiagram({
                     y="55"
                     textAnchor="middle"
                     fill="#FCA5A5"
-                    fontSize="11"
+                    fontSize="13"
                   >
                     Sparsity: {(frameData.y_sparsity * 100).toFixed(1)}%
                   </text>
@@ -1264,7 +1271,7 @@ export function BDHArchitectureDiagram({
                     y="75"
                     textAnchor="middle"
                     fill="#9CA3AF"
-                    fontSize="10"
+                    fontSize="12"
                   >
                     {frameData.y_active_count ?? "?"} / {config.total} active
                   </text>
@@ -1275,7 +1282,7 @@ export function BDHArchitectureDiagram({
                   y="70"
                   textAnchor="middle"
                   fill="#FCA5A5"
-                  fontSize="11"
+                  fontSize="13"
                 >
                   y_sparse = ReLU(y)
                 </text>
@@ -1284,10 +1291,10 @@ export function BDHArchitectureDiagram({
             {/* y_l label */}
             <text
               x={RW / 2}
-              y="172"
+              y="178"
               textAnchor="middle"
               fill={isActive(8) ? "#10B981" : "#374151"}
-              fontSize="12"
+              fontSize="15"
               fontWeight="bold"
               opacity={isActive(8) ? 1 : 0.3}
             >
@@ -1300,26 +1307,26 @@ export function BDHArchitectureDiagram({
 
           {/* Connection: y_l → Hadamard */}
           <path
-            d={`M ${RX + RW / 2} 962 L ${RX + RW / 2} 1020 L ${CX + 60} 1020`}
+            d={`M ${RX + RW / 2} 1078 L ${RX + RW / 2} 1130 L ${CX + 65} 1130`}
             stroke={isActive(9) ? "#10B981" : "#374151"}
-            strokeWidth="2"
+            strokeWidth="2.5"
             fill="none"
             opacity={isActive(9) ? 1 : 0.1}
           />
           {isActive(9) && (
             <path
-              d={`M ${RX + RW / 2} 962 L ${RX + RW / 2} 1020 L ${CX + 60} 1020`}
+              d={`M ${RX + RW / 2} 1078 L ${RX + RW / 2} 1130 L ${CX + 65} 1130`}
               stroke="#6EE7B7"
-              strokeWidth="2"
-              strokeDasharray="4 8"
+              strokeWidth="2.5"
+              strokeDasharray="5 9"
               fill="none"
               opacity="0.3"
             >
               <animate
                 attributeName="stroke-dashoffset"
-                from="12"
+                from="14"
                 to="0"
-                dur="0.8s"
+                dur="1s"
                 repeatCount="indefinite"
               />
             </path>
@@ -1329,84 +1336,84 @@ export function BDHArchitectureDiagram({
           {/* CENTER: merge, decode, output                                    */}
           {/* ================================================================ */}
 
-          {/* ===== HADAMARD (y=995) ===== */}
-          <g transform={`translate(${CX - 60}, 995)`}>
+          {/* ===== HADAMARD (y=1105) ===== */}
+          <g transform={`translate(${CX - 65}, 1105)`}>
             <motion.circle
-              cx={60}
-              cy={28}
-              r={28}
+              cx={65}
+              cy={30}
+              r={30}
               fill={isActive(9) ? "#164E63" : "#1F2937"}
               stroke={isActive(9) ? "#06B6D4" : "#374151"}
-              strokeWidth={isActive(9) ? 2 : 1}
-              strokeDasharray={isActive(9) ? undefined : "4 3"}
+              strokeWidth={isActive(9) ? 2.5 : 1.2}
+              strokeDasharray={isActive(9) ? undefined : "6 4"}
               animate={
                 isCurrent(9) && isAnimating ? { scale: [1, 1.05, 1] } : {}
               }
               transition={{ duration: 1, repeat: Infinity }}
             />
             <text
-              x="60"
-              y="34"
+              x="65"
+              y="36"
               textAnchor="middle"
               fill={isActive(9) ? "#67E8F9" : "#6B7280"}
-              fontSize="22"
+              fontSize="24"
             >
               ⊙
             </text>
             <text
-              x="60"
-              y="70"
+              x="65"
+              y="75"
               textAnchor="middle"
               fill={isActive(9) ? "#E5E7EB" : "#4B5563"}
-              fontSize="10"
+              fontSize="13"
               fontWeight="bold"
               opacity={isActive(9) ? 1 : 0.4}
             >
               x ⊙ y gating
             </text>
             {isActive(9) && frameData?.gating && (
-              <>
+              <g opacity={getProgress(9)}>
                 <text
-                  x="60"
-                  y="84"
+                  x="65"
+                  y="90"
                   textAnchor="middle"
                   fill="#22D3EE"
-                  fontSize="11"
+                  fontSize="14"
                   fontWeight="bold"
                   fontFamily="monospace"
                 >
                   {(frameData.gating.survival_rate * 100).toFixed(0)}% survive
                 </text>
                 <text
-                  x="60"
-                  y="98"
+                  x="65"
+                  y="105"
                   textAnchor="middle"
                   fill="#9CA3AF"
-                  fontSize="9"
+                  fontSize="12"
                 >
                   {frameData.gating.both} neurons pass both gates
                 </text>
                 <text
-                  x="60"
-                  y="110"
+                  x="65"
+                  y="118"
                   textAnchor="middle"
                   fill="#6B7280"
-                  fontSize="8"
+                  fontSize="11"
                 >
                   x-only: {frameData.gating.x_only} | y-only:{" "}
                   {frameData.gating.y_only}
                 </text>
-              </>
+              </g>
             )}
           </g>
 
-          <FlowArrow x1={CX} y1={1110} x2={CX} y2={1125} active={isActive(9)} />
+          <FlowArrow x1={CX} y1={1230} x2={CX} y2={1265} active={isActive(9)} />
 
-          {/* ===== DECODER D (y=1125, h=55) ===== */}
-          <g transform={`translate(${CX - 160}, 1125)`}>
+          {/* ===== DECODER D (y=1265, h=180) ===== */}
+          <g transform={`translate(${CX - 225}, 1265)`}>
             <ArchBox
-              width={320}
-              height={55}
+              width={450}
+              height={180}
               title="Decoder D"
               gradient={`url(#gg-${uniqueId})`}
               isActive={isActive(10)}
@@ -1414,58 +1421,136 @@ export function BDHArchitectureDiagram({
               progress={getProgress(10)}
               shape="trapezoidInv"
             >
-              <text
-                x="160"
-                y="38"
-                textAnchor="middle"
-                fill="#6EE7B7"
-                fontSize="11"
-                fontFamily="monospace"
-              >
-                Δv* = (x⊙y) @ D ({config.n}→{config.d})
-              </text>
+              {isActive(10) && frameData?.hadamard_grid ? (
+                <g>
+                  <text
+                    x="225"
+                    y="32"
+                    textAnchor="middle"
+                    fill="#6EE7B7"
+                    fontSize="12"
+                    fontFamily="monospace"
+                  >
+                    (x⊙y) gated input → D ({config.n}→{config.d})
+                  </text>
+                  <text x="25" y="46" fill="#9CA3AF" fontSize="11">
+                    Gated neurons per head:
+                  </text>
+                  <NeuronGrid
+                    grid={frameData.hadamard_grid}
+                    x={25}
+                    y={50}
+                    width={400}
+                    height={44}
+                    hue="cyan"
+                    progress={getProgress(10)}
+                  />
+                  {frameData.decoder_ds ? (
+                    <g>
+                      <text x="25" y="108" fill="#6EE7B7" fontSize="11">
+                        Δv* output vector:
+                      </text>
+                      <HeatmapStrip
+                        values={frameData.decoder_ds}
+                        x={25}
+                        y={112}
+                        width={400}
+                        height={20}
+                        progress={getProgress(10)}
+                      />
+                      <text
+                        x="25"
+                        y="146"
+                        fill="#9CA3AF"
+                        fontSize="11"
+                        fontFamily="monospace"
+                        opacity={Math.min(1, getProgress(10) * 2)}
+                      >
+                        ‖Δv*‖={frameData.decoder_norm?.toFixed(2)} μ=
+                        {frameData.decoder_mean?.toFixed(4)} σ=
+                        {frameData.decoder_std?.toFixed(4)}
+                      </text>
+                    </g>
+                  ) : (
+                    <text
+                      x="225"
+                      y="126"
+                      textAnchor="middle"
+                      fill="#6EE7B7"
+                      fontSize="12"
+                      fontFamily="monospace"
+                    >
+                      Δv* = (x⊙y) @ D → ℝ^{config.d}
+                    </text>
+                  )}
+                  {frameData.gating && (
+                    <text
+                      x="225"
+                      y="164"
+                      textAnchor="middle"
+                      fill="#475569"
+                      fontSize="11"
+                      opacity={Math.min(1, getProgress(10) * 1.5)}
+                    >
+                      {frameData.gating.both} active neurons → compressed to{" "}
+                      {config.d}-dim update
+                    </text>
+                  )}
+                </g>
+              ) : (
+                <text
+                  x="225"
+                  y="95"
+                  textAnchor="middle"
+                  fill="#6EE7B7"
+                  fontSize="13"
+                  fontFamily="monospace"
+                >
+                  Δv* = (x⊙y) @ D ({config.n}→{config.d})
+                </text>
+              )}
             </ArchBox>
           </g>
 
           <FlowArrow
             x1={CX}
-            y1={1180}
+            y1={1445}
             x2={CX}
-            y2={1195}
+            y2={1480}
             active={isActive(10)}
           />
 
-          {/* ===== RESIDUAL (y=1195) ===== */}
-          <g transform={`translate(${CX - 25}, 1195)`}>
+          {/* ===== RESIDUAL (y=1480) ===== */}
+          <g transform={`translate(${CX - 28}, 1480)`}>
             <motion.circle
-              cx={25}
-              cy={20}
-              r={20}
+              cx={28}
+              cy={22}
+              r={22}
               fill={isActive(11) ? "#312E81" : "#1F2937"}
               stroke={isActive(11) ? "#8B5CF6" : "#374151"}
-              strokeWidth={isActive(11) ? 2 : 1}
-              strokeDasharray={isActive(11) ? undefined : "4 3"}
+              strokeWidth={isActive(11) ? 2.5 : 1.2}
+              strokeDasharray={isActive(11) ? undefined : "6 4"}
               animate={
                 isCurrent(11) && isAnimating ? { scale: [1, 1.05, 1] } : {}
               }
               transition={{ duration: 1, repeat: Infinity }}
             />
             <text
-              x="25"
-              y="26"
+              x="28"
+              y="28"
               textAnchor="middle"
               fill={isActive(11) ? "#C4B5FD" : "#6B7280"}
-              fontSize="18"
+              fontSize="20"
               fontWeight="bold"
             >
               ⊕
             </text>
             <text
-              x="25"
-              y="52"
+              x="28"
+              y="56"
               textAnchor="middle"
               fill={isActive(11) ? "#9CA3AF" : "#374151"}
-              fontSize="10"
+              fontSize="13"
               opacity={isActive(11) ? 1 : 0.35}
             >
               v* + Δv*
@@ -1474,27 +1559,27 @@ export function BDHArchitectureDiagram({
 
           {/* Skip connection line */}
           <path
-            d={`M ${CX} 248 L ${W - 30} 248 L ${W - 30} 1215 L ${CX + 25} 1215`}
+            d={`M ${CX} 280 L ${W - 32} 280 L ${W - 32} 1502 L ${CX + 28} 1502`}
             stroke={isActive(11) ? "#8B5CF6" : "#374151"}
-            strokeWidth="1.5"
+            strokeWidth="2"
             fill="none"
-            strokeDasharray="4 2"
+            strokeDasharray="5 3"
             opacity={isActive(11) ? 0.5 : 0.08}
           />
           {isActive(11) && (
             <path
-              d={`M ${CX} 248 L ${W - 30} 248 L ${W - 30} 1215 L ${CX + 25} 1215`}
+              d={`M ${CX} 280 L ${W - 32} 280 L ${W - 32} 1502 L ${CX + 28} 1502`}
               stroke="#C4B5FD"
-              strokeWidth="1.5"
-              strokeDasharray="3 9"
+              strokeWidth="2"
+              strokeDasharray="4 10"
               fill="none"
               opacity="0.3"
             >
               <animate
                 attributeName="stroke-dashoffset"
-                from="12"
+                from="14"
                 to="0"
-                dur="1s"
+                dur="1.2s"
                 repeatCount="indefinite"
               />
             </path>
@@ -1502,50 +1587,81 @@ export function BDHArchitectureDiagram({
 
           {/* ===== OUTPUT PREDICTIONS ===== */}
           {isActive(12) && predictions && (
-            <g transform={`translate(${CX - 240}, 1265)`}>
+            <g transform={`translate(${CX - 270}, 1570)`}>
               <text
-                x="240"
+                x="270"
                 y="0"
                 textAnchor="middle"
-                fill="#E5E7EB"
-                fontSize="11"
+                fill="#F3F4F6"
+                fontSize="14"
                 fontWeight="bold"
               >
-                Next token predictions:
+                Next Token Predictions
               </text>
-              <g transform="translate(0, 10)">
-                {predictions.slice(0, 5).map((p, i) => (
-                  <g key={i} transform={`translate(${i * 96}, 0)`}>
-                    <rect
-                      x="0"
-                      y="0"
-                      width="90"
-                      height="26"
-                      rx="5"
-                      fill={i === 0 ? "#7C3AED" : "#374151"}
-                      opacity={i === 0 ? 1 : 0.7}
-                    />
-                    <text
-                      x="45"
-                      y="12"
-                      textAnchor="middle"
-                      fill="#FFF"
-                      fontSize="11"
-                      fontWeight="bold"
+              <g transform="translate(0, 16)">
+                {predictions.slice(0, 5).map((p, i) => {
+                  const cardProgress = Math.max(
+                    0,
+                    Math.min(1, (getProgress(12) * 5 - i) / 1.5),
+                  );
+                  const cardW = i === 0 ? 115 : 100;
+                  const cardH = i === 0 ? 52 : 42;
+                  const gap = 8;
+                  // Calculate x offset: first card is wider
+                  let xOff = 0;
+                  for (let j = 0; j < i; j++)
+                    xOff += (j === 0 ? 115 : 100) + gap;
+                  return (
+                    <g
+                      key={i}
+                      transform={`translate(${xOff}, ${i === 0 ? 0 : 5})`}
+                      opacity={cardProgress}
                     >
-                      "{p.char}"
-                    </text>
-                    <text
-                      x="45"
-                      y="22"
-                      textAnchor="middle"
-                      fill="#D1D5DB"
-                      fontSize="8"
-                    >
-                      {(p.prob * 100).toFixed(1)}%
-                    </text>
-                  </g>
-                ))}
+                      <rect
+                        x="0"
+                        y="0"
+                        width={cardW}
+                        height={cardH}
+                        rx="8"
+                        fill={i === 0 ? "#7C3AED" : "#1F2937"}
+                        stroke={i === 0 ? "#A78BFA" : "#374151"}
+                        strokeWidth={i === 0 ? 2 : 1}
+                      />
+                      {i === 0 && (
+                        <text
+                          x={cardW / 2}
+                          y="-4"
+                          textAnchor="middle"
+                          fill="#A78BFA"
+                          fontSize="11"
+                          fontWeight="bold"
+                        >
+                          TOP PREDICTION
+                        </text>
+                      )}
+                      <text
+                        x={cardW / 2}
+                        y={i === 0 ? 22 : 18}
+                        textAnchor="middle"
+                        fill="#FFF"
+                        fontSize={i === 0 ? 18 : 14}
+                        fontWeight="bold"
+                      >
+                        "{p.char}"
+                      </text>
+                      <text
+                        x={cardW / 2}
+                        y={i === 0 ? 40 : 34}
+                        textAnchor="middle"
+                        fill={i === 0 ? "#E9D5FF" : "#9CA3AF"}
+                        fontSize={i === 0 ? 12 : 10}
+                        fontFamily="monospace"
+                      >
+                        {(p.prob * 100).toFixed(1)}%
+                      </text>
+                    </g>
+                  );
+                })}
               </g>
             </g>
           )}
@@ -1568,6 +1684,7 @@ function RhoMatrixViz({
   y,
   width,
   height,
+  progress = 1,
 }: {
   matrix: number[][];
   currentT: number;
@@ -1576,6 +1693,7 @@ function RhoMatrixViz({
   y: number;
   width: number;
   height: number;
+  progress?: number;
 }) {
   const T = Math.min(currentT + 1, matrix.length);
   if (T <= 0) return null;
@@ -1610,9 +1728,14 @@ function RhoMatrixViz({
         rx="3"
       />
 
-      {/* Matrix cells */}
-      {subMatrix.map((row, i) =>
-        row.map((val, j) => {
+      {/* Matrix cells — reveal progressively row by row */}
+      {subMatrix.map((row, i) => {
+        // Row-by-row reveal: each row fades in based on progress
+        const rowProgress = Math.max(
+          0,
+          Math.min(1, (T * progress - i) / Math.max(1, T * 0.2)),
+        );
+        return row.map((val, j) => {
           // Only lower triangle has values (causal mask with diagonal=-1)
           const isAboveDiag = j >= i;
           return (
@@ -1622,12 +1745,19 @@ function RhoMatrixViz({
               y={i * cellH + 0.3}
               width={Math.max(1, cellW - 0.6)}
               height={Math.max(1, cellH - 0.6)}
-              fill={isAboveDiag ? "#0A0F1A" : rhoColor(val, maxAbs)}
+              fill={
+                isAboveDiag
+                  ? "#0A0F1A"
+                  : rowProgress > 0
+                    ? rhoColor(val, maxAbs)
+                    : "#0A0F1A"
+              }
+              opacity={isAboveDiag ? 1 : rowProgress}
               rx="0.5"
             />
           );
-        }),
-      )}
+        });
+      })}
 
       {/* Highlight current token's row (the new update) */}
       {currentT < T && (
@@ -1689,7 +1819,7 @@ function RhoMatrixViz({
       />
 
       {/* Legend */}
-      <text x={labelW} y={gridH + labelH + 10} fill="#475569" fontSize="7">
+      <text x={labelW} y={gridH + labelH + 10} fill="#6B7280" fontSize="11">
         dark = low attn
       </text>
       <text
@@ -1697,7 +1827,7 @@ function RhoMatrixViz({
         y={gridH + labelH + 10}
         textAnchor="end"
         fill="#22D3EE"
-        fontSize="7"
+        fontSize="11"
       >
         bright cyan = high attn
       </text>
@@ -1720,19 +1850,22 @@ function HeatmapStrip({
   y,
   width,
   height,
+  progress = 1,
 }: {
   values: number[];
   x: number;
   y: number;
   width: number;
   height: number;
+  progress?: number;
 }) {
   const cellW = width / values.length;
   const maxAbs = Math.max(0.001, ...values.map((v) => Math.abs(v)));
+  const revealCount = Math.ceil(values.length * Math.min(1, progress));
   return (
     <g transform={`translate(${x}, ${y})`}>
       <rect width={width} height={height} fill="#0F172A" rx="2" />
-      {values.map((v, i) => (
+      {values.slice(0, revealCount).map((v, i) => (
         <rect
           key={i}
           x={i * cellW}
@@ -1742,6 +1875,18 @@ function HeatmapStrip({
           rx="0.5"
         />
       ))}
+      {/* Sweep cursor at the reveal front */}
+      {progress < 1 && revealCount > 0 && (
+        <rect
+          x={revealCount * cellW - 2}
+          y={0}
+          width={3}
+          height={height}
+          fill="#A78BFA"
+          opacity={0.7}
+          rx="1"
+        />
+      )}
       <rect
         width={width}
         height={height}
@@ -1761,12 +1906,14 @@ function HistogramViz({
   y,
   width,
   height,
+  progress = 1,
 }: {
   bins: Array<{ start: number; end: number; count: number }>;
   x: number;
   y: number;
   width: number;
   height: number;
+  progress?: number;
 }) {
   const maxCount = Math.max(1, ...bins.map((b) => b.count));
   const barW = width / bins.length;
@@ -1785,11 +1932,15 @@ function HistogramViz({
         ? firstPositiveIdx * barW
         : -1;
 
+  // Ease-out for smoother bar growth
+  const easedProgress = 1 - Math.pow(1 - Math.min(1, progress), 3);
+
   return (
     <g transform={`translate(${x}, ${y})`}>
       <rect width={width} height={height} fill="#0F172A" rx="2" />
       {bins.map((bin, i) => {
-        const barH = (bin.count / maxCount) * (height - 2);
+        const fullBarH = (bin.count / maxCount) * (height - 2);
+        const barH = fullBarH * easedProgress;
         // Color by midpoint: bins centered in positive range → orange
         const midpoint = (bin.start + bin.end) / 2;
         const isPositive = midpoint >= 0;
@@ -1825,15 +1976,6 @@ function HistogramViz({
         strokeWidth="0.5"
         rx="2"
       />
-      <text
-        x={width / 2}
-        y={-3}
-        textAnchor="middle"
-        fill="#6B7280"
-        fontSize="7"
-      >
-        ← negative (killed) | positive (survives) →
-      </text>
     </g>
   );
 }
@@ -1846,6 +1988,7 @@ function NeuronGrid({
   width,
   height,
   hue = "red",
+  progress = 1,
 }: {
   grid: number[][];
   x: number;
@@ -1853,6 +1996,7 @@ function NeuronGrid({
   width: number;
   height: number;
   hue?: "red" | "green" | "cyan";
+  progress?: number;
 }) {
   const numHeads = grid.length;
   const bins = grid[0]?.length || 0;
@@ -1861,6 +2005,10 @@ function NeuronGrid({
   const labelW = 20;
   const cellW = (width - labelW) / bins;
   const cellH = height / numHeads;
+  const totalCells = numHeads * bins;
+  // Cascade wavefront: cells illuminate in a sweep
+  const wavefront = totalCells * Math.min(1, progress);
+  const edgeWidth = Math.max(3, totalCells * 0.12);
   return (
     <g transform={`translate(${x}, ${y})`}>
       <rect
@@ -1876,21 +2024,34 @@ function NeuronGrid({
             x="0"
             y={h * cellH + cellH / 2 + 3}
             fill="#9CA3AF"
-            fontSize="8"
+            fontSize="11"
             fontFamily="monospace"
+            opacity={progress >= (h + 1) / numHeads ? 1 : 0.3}
           >
             H{h}
           </text>
-          {row.map((val, b) => (
-            <rect
-              key={b}
-              x={labelW + b * cellW}
-              y={h * cellH}
-              width={Math.max(0.5, cellW - 0.3)}
-              height={cellH - 0.5}
-              fill={activationColor(val, maxVal, hue)}
-            />
-          ))}
+          {row.map((val, b) => {
+            const cellIdx = h * bins + b;
+            const cellOpacity = Math.max(
+              0,
+              Math.min(1, (wavefront - cellIdx) / edgeWidth),
+            );
+            return (
+              <rect
+                key={b}
+                x={labelW + b * cellW}
+                y={h * cellH}
+                width={Math.max(0.5, cellW - 0.3)}
+                height={cellH - 0.5}
+                fill={
+                  cellOpacity > 0
+                    ? activationColor(val, maxVal, hue)
+                    : "#0F172A"
+                }
+                opacity={cellOpacity}
+              />
+            );
+          })}
         </g>
       ))}
       <rect
@@ -1970,14 +2131,33 @@ function ArchBox({
         fill="none"
         stroke={isActive ? "#8B5CF6" : "#374151"}
         strokeWidth={isActive ? 2 : 1}
-        strokeDasharray={isActive ? undefined : "4 3"}
+        strokeDasharray={isActive ? undefined : "6 4"}
+      />
+      {/* Title bar */}
+      <rect
+        x="1"
+        y="1"
+        width={width - 2}
+        height="26"
+        fill="#0D1117"
+        opacity="0.7"
+        rx="1"
+      />
+      <line
+        x1="1"
+        y1="27"
+        x2={width - 1}
+        y2="27"
+        stroke={isActive ? "#6D28D9" : "#374151"}
+        strokeWidth="1"
+        opacity={isActive ? 0.6 : 0.3}
       />
       {/* Computing shimmer — animated scan line when current step */}
       {isCurrent && (
         <g>
           <rect
             x="2"
-            y="20"
+            y="28"
             width={width - 4}
             height="3"
             rx="1.5"
@@ -1986,7 +2166,7 @@ function ArchBox({
           >
             <animate
               attributeName="y"
-              from="20"
+              from="28"
               to={String(height - 3)}
               dur="1.2s"
               repeatCount="indefinite"
@@ -2018,10 +2198,10 @@ function ArchBox({
       )}
       <text
         x={width / 2}
-        y="18"
+        y="19"
         textAnchor="middle"
-        fill={isActive ? "#E5E7EB" : "#6B7280"}
-        fontSize="12"
+        fill={isActive ? "#F3F4F6" : "#6B7280"}
+        fontSize="15"
         fontWeight="bold"
       >
         {title}
@@ -2044,62 +2224,84 @@ function FlowArrow({
   y2: number;
   active: boolean;
 }) {
+  // Arrowhead triangle (pointing in direction of travel)
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const headLen = 7;
+  const headW = 4.5;
+  const tipX = x2;
+  const tipY = y2;
+  const baseX = tipX - ux * headLen;
+  const baseY = tipY - uy * headLen;
+  const lx = baseX + uy * headW;
+  const ly = baseY - ux * headW;
+  const rx = baseX - uy * headW;
+  const ry = baseY + ux * headW;
+
   return (
     <g>
       <line
         x1={x1}
         y1={y1}
-        x2={x2}
-        y2={y2}
+        x2={baseX}
+        y2={baseY}
         stroke={active ? "#8B5CF6" : "#374151"}
-        strokeWidth={active ? 2 : 1}
-        opacity={active ? 1 : 0.2}
+        strokeWidth={active ? 2.5 : 1.2}
+        opacity={active ? 1 : 0.25}
+      />
+      <polygon
+        points={`${tipX},${tipY} ${lx},${ly} ${rx},${ry}`}
+        fill={active ? "#8B5CF6" : "#374151"}
+        opacity={active ? 1 : 0.25}
       />
       {active && (
         <>
           <line
             x1={x1}
             y1={y1}
-            x2={x2}
-            y2={y2}
+            x2={baseX}
+            y2={baseY}
             stroke="#C4B5FD"
-            strokeWidth="2"
-            strokeDasharray="4 8"
+            strokeWidth="2.5"
+            strokeDasharray="5 9"
             opacity="0.5"
           >
             <animate
               attributeName="stroke-dashoffset"
-              from="12"
+              from="14"
               to="0"
-              dur="0.6s"
+              dur="0.9s"
               repeatCount="indefinite"
             />
           </line>
-          <circle r="3" fill="#A78BFA" opacity="0.8">
+          <circle r="3.5" fill="#A78BFA" opacity="0.85">
             <animate
               attributeName="cx"
               from={String(x1)}
               to={String(x2)}
-              dur="0.8s"
+              dur="1s"
               repeatCount="indefinite"
             />
             <animate
               attributeName="cy"
               from={String(y1)}
               to={String(y2)}
-              dur="0.8s"
+              dur="1s"
               repeatCount="indefinite"
             />
             <animate
               attributeName="r"
-              values="2;4;2"
-              dur="0.8s"
+              values="2.5;4.5;2.5"
+              dur="1s"
               repeatCount="indefinite"
             />
             <animate
               attributeName="opacity"
               values="0.9;0.3;0.9"
-              dur="0.8s"
+              dur="1s"
               repeatCount="indefinite"
             />
           </circle>

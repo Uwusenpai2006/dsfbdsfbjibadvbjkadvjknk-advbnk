@@ -1,106 +1,216 @@
-import { Outlet, NavLink } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { 
-  Home, 
-  Cpu, 
-  BarChart3, 
-  Network, 
-  Brain, 
+import { useState, useEffect } from "react";
+import { Outlet, NavLink } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Home,
+  Cpu,
+  BarChart3,
+  Network,
+  Brain,
   Zap,
   GitMerge,
+  FileText,
+  BookOpen,
   Github,
-  ExternalLink
-} from 'lucide-react'
+  ExternalLink,
+  WifiOff,
+  Loader2,
+} from "lucide-react";
+import { onBackendStatus, startHealthPoll } from "../utils/api";
+import { spring } from "../utils/motion";
 
+/* ─── Nav items — "different lenses on the same brain" ─── */
 const navItems = [
-  { path: '/', icon: Home, label: 'Home' },
-  { path: '/architecture', icon: Cpu, label: 'Architecture' },
-  { path: '/sparsity', icon: BarChart3, label: 'Sparsity' },
-  { path: '/graph', icon: Network, label: 'Graph Brain' },
-  { path: '/monosemanticity', icon: Brain, label: 'Monosemanticity' },
-  { path: '/hebbian', icon: Zap, label: 'Hebbian' },
-  { path: '/merge', icon: GitMerge, label: 'Model Merge' },
-]
+  { path: "/", icon: Home, label: "Observatory", sub: "Home" },
+  {
+    path: "/architecture",
+    icon: Cpu,
+    label: "Structural View",
+    sub: "Architecture",
+  },
+  {
+    path: "/sparsity",
+    icon: BarChart3,
+    label: "Sparsity View",
+    sub: "Sparse Brain",
+  },
+  { path: "/graph", icon: Network, label: "Topology View", sub: "Graph Brain" },
+  {
+    path: "/monosemanticity",
+    icon: Brain,
+    label: "Concept View",
+    sub: "Monosemanticity",
+  },
+  { path: "/hebbian", icon: Zap, label: "Dynamics View", sub: "Hebbian" },
+  {
+    path: "/merge",
+    icon: GitMerge,
+    label: "Composition View",
+    sub: "Model Merge",
+  },
+  { path: "/findings", icon: FileText, label: "Findings", sub: "Summary" },
+  { path: "/learn", icon: BookOpen, label: "Learn BDH", sub: "Tutorial" },
+];
 
 export function Layout() {
+  const [backendUp, setBackendUp] = useState(true);
+
+  useEffect(() => {
+    startHealthPoll();
+    return onBackendStatus(setBackendUp);
+  }, []);
+
   return (
-    <div className="min-h-screen flex">
-      {/* Sidebar */}
-      <motion.aside 
-        initial={{ x: -100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        className="w-64 bg-gray-900/50 backdrop-blur-xl border-r border-gray-800/50 flex flex-col"
+    <div
+      className="min-h-screen flex noise-overlay vignette"
+      style={{ background: "#070D12" }}
+    >
+      {/* ─── Sidebar ─── */}
+      <aside
+        className="w-60 flex flex-col shrink-0 border-r"
+        style={{ background: "#0B1216", borderColor: "rgba(255,255,255,0.06)" }}
       >
         {/* Logo */}
-        <div className="p-6 border-b border-gray-800/50">
+        <div
+          className="p-5"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        >
           <NavLink to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-bdh-accent to-purple-600 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+            <motion.span
+              className="text-xl"
+              whileHover={{ rotate: 12, scale: 1.1 }}
+              transition={spring.bouncy}
+            >
               🐉
-            </div>
+            </motion.span>
             <div>
-              <h1 className="font-bold text-lg gradient-text">BDH Suite</h1>
-              <p className="text-xs text-gray-500">Interpretability Explorer</p>
+              <h1 className="font-semibold text-[#E2E8F0] text-sm tracking-tight">
+                BDH Suite
+              </h1>
+              <p className="text-[10px] text-[#4A5568] tracking-wider uppercase">
+                Neural Observatory
+              </p>
             </div>
           </NavLink>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-                  isActive
-                    ? 'bg-bdh-accent/20 text-bdh-accent'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-                }`
-              }
+              end={item.path === "/"}
+              className="relative block"
             >
               {({ isActive }) => (
-                <>
-                  <item.icon 
-                    size={20} 
-                    className={`transition-transform group-hover:scale-110 ${
-                      isActive ? 'text-bdh-accent' : ''
-                    }`}
-                  />
-                  <span className="font-medium">{item.label}</span>
+                <motion.div
+                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
+                    isActive
+                      ? "text-[#E2E8F0]"
+                      : "text-[#6B7280] hover:text-[#A0AEC0]"
+                  }`}
+                  whileHover={!isActive ? { x: 3 } : undefined}
+                  transition={spring.snappy}
+                >
+                  {/* Active indicator — shared layout for smooth morph */}
                   {isActive && (
                     <motion.div
-                      layoutId="nav-indicator"
-                      className="ml-auto w-1.5 h-1.5 rounded-full bg-bdh-accent"
+                      layoutId="nav-active"
+                      className="absolute inset-0 rounded-lg"
+                      style={{
+                        background: "rgba(0,200,150,0.08)",
+                        border: "1px solid rgba(0,200,150,0.12)",
+                      }}
+                      transition={spring.default}
                     />
                   )}
-                </>
+                  <item.icon
+                    size={17}
+                    className={`relative z-10 ${isActive ? "text-[#00C896]" : ""}`}
+                  />
+                  <div className="relative z-10">
+                    <span className="font-medium block leading-tight">
+                      {item.label}
+                    </span>
+                    {item.sub !== item.label && (
+                      <span className="text-[10px] text-[#4A5568] block">
+                        {item.sub}
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
               )}
             </NavLink>
           ))}
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-800/50 space-y-3">
+        <div
+          className="p-4 space-y-3"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+        >
           <a
             href="https://github.com/pathwaycom/bdh"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+            className="flex items-center gap-2 text-[#4A5568] hover:text-[#8B95A5] text-sm transition-colors"
           >
-            <Github size={16} />
+            <Github size={15} />
             <span>BDH Paper</span>
-            <ExternalLink size={12} className="ml-auto" />
+            <ExternalLink size={11} className="ml-auto" />
           </a>
-          <div className="text-xs text-gray-600">
+          <div className="text-[10px] text-[#2D3748] tracking-wider uppercase">
             KRITI 2026 · AI Interpretability
           </div>
         </div>
-      </motion.aside>
+      </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <Outlet />
+      {/* ─── Main Content ─── */}
+      <main className="flex-1 overflow-auto flex flex-col">
+        {/* Backend banner */}
+        <AnimatePresence>
+          {!backendUp && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={spring.snappy}
+              className="overflow-hidden"
+            >
+              <div
+                className="flex items-center gap-3 px-5 py-2.5 text-amber-400 text-sm"
+                style={{
+                  background: "rgba(245,158,11,0.06)",
+                  borderBottom: "1px solid rgba(245,158,11,0.12)",
+                }}
+              >
+                <WifiOff size={15} />
+                <span>
+                  <span className="font-semibold">Backend offline</span>
+                  {" — "}run{" "}
+                  <code
+                    className="px-1.5 py-0.5 rounded text-xs font-mono text-amber-300"
+                    style={{ background: "rgba(255,255,255,0.05)" }}
+                  >
+                    uvicorn backend.main:app --reload --port 8000
+                  </code>{" "}
+                  from the project root
+                </span>
+                <Loader2
+                  size={14}
+                  className="animate-spin ml-auto opacity-50"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Page content — each page handles its own entry animation */}
+        <div className="flex-1" style={{ minHeight: 0 }}>
+          <Outlet />
+        </div>
       </main>
     </div>
-  )
+  );
 }

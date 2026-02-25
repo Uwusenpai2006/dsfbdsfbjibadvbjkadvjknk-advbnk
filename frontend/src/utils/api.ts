@@ -8,6 +8,7 @@ export const api = axios.create({
 });
 
 /* ------------------------------------------------------------------ */
+<<<<<<< HEAD
 /*  HUGGINGFACE BACKEND (deployed BDH model)                           */
 /* ------------------------------------------------------------------ */
 const HF_API_URL =
@@ -58,6 +59,8 @@ export const hfBackend = {
 };
 
 /* ------------------------------------------------------------------ */
+=======
+>>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
 /*  Backend connection status (reactive)                               */
 /* ------------------------------------------------------------------ */
 type StatusListener = (connected: boolean) => void;
@@ -238,3 +241,8 @@ export const graph = {
 
   clearCache: () => api.delete("/graph/cache"),
  };
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
