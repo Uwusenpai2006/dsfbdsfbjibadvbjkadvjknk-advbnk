@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Network, Play, Pause, RotateCcw, Layers } from 'lucide-react'
 import ForceGraph3D from 'react-force-graph-3d'

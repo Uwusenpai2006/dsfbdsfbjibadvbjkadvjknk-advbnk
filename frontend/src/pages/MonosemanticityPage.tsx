@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Brain, Search, Sparkles, ArrowRight } from 'lucide-react'
+import { Brain, Search, Sparkles } from 'lucide-react'
 
 // Sample monosemantic synapse data
 const SAMPLE_SYNAPSES = {

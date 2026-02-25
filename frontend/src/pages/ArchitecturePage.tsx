@@ -4,7 +4,6 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Info,
   Zap,
   SkipForward,
   SkipBack,
@@ -21,12 +20,10 @@ export function ArchitecturePage() {
   const [inputText, setInputText] = useState("The capital of France is Paris");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentLayer, setCurrentLayer] = useState(0);
-  const [showTooltips, setShowTooltips] = useState(true);
 
   // === Sequential animation state ===
   const [currentTokenIdx, setCurrentTokenIdx] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
-  const [stepProgress, setStepProgress] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stepStartRef = useRef<number>(0);
 

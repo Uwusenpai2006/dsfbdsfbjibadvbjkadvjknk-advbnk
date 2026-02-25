@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { GitMerge, ArrowRight, Check, Sparkles, Zap } from 'lucide-react'
+import { GitMerge, Check, Sparkles, Zap } from 'lucide-react'
 
 export function MergePage() {
   const [mergeStep, setMergeStep] = useState<0 | 1 | 2 | 3>(0)
