@@ -17,7 +17,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
   const [generatedText, setGeneratedText] = useState<string | null>(null);
   const [usedBackend, setUsedBackend] = useState<"huggingface" | "local" | null>(null);
 
-  // Check if backends are available
   useEffect(() => {
     checkHfStatus();
     checkServerStatus();
@@ -28,7 +27,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Check HuggingFace backend (PRIMARY)
   const checkHfStatus = async () => {
     try {
       const health = await hfBackend.checkHealth();
@@ -38,7 +36,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
     }
   };
 
-  // Check local backend (FALLBACK)
   const checkServerStatus = async () => {
     try {
       const response = await fetch("/health", {
@@ -63,7 +60,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
     setLastResult(null);
     setUsedBackend(null);
 
-    // TRY 1: HuggingFace (primary)
     try {
       const result = await hfBackend.generate(inputText, 100, 1.0, 3);
       setGeneratedText(result.generated_text);
@@ -79,7 +75,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
       console.warn("HuggingFace failed, trying local backend:", hfErr);
     }
 
-    // TRY 2: Local backend (fallback)
     try {
       const response = await fetch("/api/inference/run", {
         method: "POST",
@@ -102,7 +97,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
       console.warn("Local backend also failed:", localErr);
     }
 
-    // BOTH FAILED
     setError("Both HuggingFace and local backends are unavailable. HuggingFace may be waking up — try again in ~30 seconds.");
     setIsLoading(false);
   };
@@ -116,16 +110,13 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
 
   return (
     <div className="glass-card p-6">
-      {/* Header with status indicator */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <Zap size={20} className="text-bdh-accent" />
           Live Inference
         </h3>
 
-<<<<<<< HEAD
         <div className="flex items-center gap-3">
-          {/* HuggingFace status (PRIMARY) */}
           {isHfOnline === null ? (
             <span className="text-[#4A5568] text-sm flex items-center gap-1">
               <Loader2 size={14} className="animate-spin" />
@@ -143,10 +134,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
             </span>
           )}
 
-          {/* Local backend status (FALLBACK) */}
-=======
-        <div className="flex items-center gap-2">
->>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
           {isServerOnline === null ? (
             <span className="text-[#4A5568] text-sm flex items-center gap-1">
               <Loader2 size={14} className="animate-spin" />
@@ -165,7 +152,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         </div>
       </div>
 
-      {/* Active backend indicator */}
       {hasAnyBackend && (
         <div className="mb-3 text-xs text-[#4A5568]">
           Primary:{" "}
@@ -177,7 +163,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         </div>
       )}
 
-      {/* Both offline warning */}
       {hasAnyBackend === false && isHfOnline !== null && isServerOnline !== null && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -188,17 +173,9 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
             <AlertCircle size={16} />
             No backends available. HuggingFace may be waking up (~30s after inactivity).
           </p>
-<<<<<<< HEAD
-=======
-          <code className="block mt-2 p-2 bg-[#0B1216] rounded text-xs text-[#CBD5E0]">
-            python backend/live_server.py --model
-            checkpoints/french/french_best.pt
-          </code>
->>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
         </motion.div>
       )}
 
-      {/* Input */}
       <div className="flex gap-3">
         <input
           type="text"
@@ -223,7 +200,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         </button>
       </div>
 
-      {/* Error */}
       <AnimatePresence>
         {error && (
           <motion.div
@@ -237,7 +213,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         )}
       </AnimatePresence>
 
-      {/* Generated text result (from HuggingFace) */}
       {generatedText && usedBackend === "huggingface" && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -254,7 +229,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         </motion.div>
       )}
 
-      {/* Quick stats from last result (from local backend) */}
       {lastResult && usedBackend === "local" && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -282,7 +256,6 @@ export function LiveInference({ onDataReceived }: LiveInferenceProps) {
         </motion.div>
       )}
 
-      {/* Example prompts */}
       <div className="mt-4">
         <p className="text-xs text-[#4A5568] mb-2">Try these examples:</p>
         <div className="flex flex-wrap gap-2">
