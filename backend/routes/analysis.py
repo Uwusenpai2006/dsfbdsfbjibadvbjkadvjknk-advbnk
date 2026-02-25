@@ -80,7 +80,7 @@ class CompareRequest(BaseModel):
 # =============================================================================
 
 @router.post("/sparsity", response_model=SparsityResponse)
-async def analyze_sparsity(request: SparsityRequest, req: Request):
+def analyze_sparsity(request: SparsityRequest, req: Request):
     """
     Analyze sparsity for a set of texts.
     
@@ -167,7 +167,7 @@ async def analyze_sparsity(request: SparsityRequest, req: Request):
 
 
 @router.post("/probe-concept", response_model=ConceptProbeResponse)
-async def probe_concept(request: ConceptProbeRequest, req: Request):
+def probe_concept(request: ConceptProbeRequest, req: Request):
     """
     Probe for concept-specific synapses.
     
@@ -276,7 +276,7 @@ async def probe_concept(request: ConceptProbeRequest, req: Request):
 
 
 @router.post("/neuron-fingerprint")
-async def neuron_fingerprint(request: ConceptProbeRequest, req: Request):
+def neuron_fingerprint(request: ConceptProbeRequest, req: Request):
     """
     Return per-word neuron activation fingerprints with rich analytics.
 
@@ -423,7 +423,7 @@ async def neuron_fingerprint(request: ConceptProbeRequest, req: Request):
 
 
 @router.post("/compare")
-async def compare_models(request: CompareRequest, req: Request):
+def compare_models(request: CompareRequest, req: Request):
     """
     Compare activation patterns across multiple models.
     
@@ -530,7 +530,7 @@ class NeuronFingerprintRequest(BaseModel):
 
 
 @router.post("/neuron-fingerprint")
-async def neuron_fingerprint(request: NeuronFingerprintRequest, req: Request):
+def neuron_fingerprint(request: NeuronFingerprintRequest, req: Request):
     """
     Run words through the model and return per-word sparse fingerprints,
     cosine similarity matrix, and shared neurons — same shape as

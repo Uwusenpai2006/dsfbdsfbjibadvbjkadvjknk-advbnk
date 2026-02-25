@@ -14,10 +14,8 @@ import {
   Info,
   SkipForward,
   Square,
-  Brain,
 } from "lucide-react";
 import ForceGraph3D from "react-force-graph-3d";
-import * as THREE from "three";
 import { api } from "../utils/api";
 
 // ─── Types ─────────────────────────────────────────────────────────────
@@ -30,8 +28,6 @@ interface ClusterMeta {
   internal_weight: number;
   hub_neurons: Array<{ neuron: number; degree: number }>;
   label: string | null;
-  label_confidence?: number;
-  top_trigger_words?: string[];
 }
 interface ClusterData {
   n_neurons: number;
@@ -67,7 +63,6 @@ interface TokenAct {
     normalized: number;
     active_neurons: number;
   }>;
-  node_activations?: Record<string, number>;
 }
 interface ActResult {
   input_chars: string[];
@@ -103,15 +98,21 @@ const CC = [
   "#22D3EE",
   "#A3E635",
 ];
-
+const CC_DIM = CC.map((c) => {
+  const [r, g, b] = [1, 3, 5].map((i) =>
+    Math.round(parseInt(c.slice(i, i + 2), 16) * 0.18),
+  );
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+});
+const CC_BRIGHT = CC.map((c) => {
+  const [r, g, b] = [1, 3, 5].map((i) =>
+    Math.min(255, Math.round(parseInt(c.slice(i, i + 2), 16) * 1.4)),
+  );
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+});
 const ci = (cid: number) => (cid <= 0 ? 0 : ((cid - 1) % (CC.length - 1)) + 1);
 
-function hexToRgb(hex: string): [number, number, number] {
-  const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return r ? [parseInt(r[1], 16), parseInt(r[2], 16), parseInt(r[3], 16)] : [128, 128, 128];
-}
-
-// ─── Histogram ─────────────────────────────────────────────────────────
+// ─── Mini histogram (static, no animation) ─────────────────────────────
 function Hist({
   data,
   beta,
@@ -126,9 +127,7 @@ function Hist({
   const bp = mx > mn ? ((beta - mn) / (mx - mn)) * 100 : 50;
   return (
     <div className="mt-1.5">
-      <div className="text-[9px] text-gray-600 mb-0.5">
-        G* weight distribution
-      </div>
+      <div className="text-[9px] text-gray-600 mb-0.5">G* distribution</div>
       <div className="relative h-8 bg-gray-900/40 rounded overflow-hidden border border-gray-800/40">
         <div className="absolute inset-0 flex items-end">
           {data.map((d, i) => (
@@ -152,14 +151,13 @@ function Hist({
   );
 }
 
-// ─── Cluster Pill ──────────────────────────────────────────────────────
+// ─── Cluster pill (no framer-motion, pure CSS transitions) ──────────────
 function Pill({
   c,
   act,
   blink,
   open,
   dimmed,
-  selected,
   onClick,
 }: {
   c: ClusterMeta;
@@ -167,51 +165,41 @@ function Pill({
   blink: boolean;
   open: boolean;
   dimmed: boolean;
-  selected: boolean;
   onClick: () => void;
 }) {
   const color = CC[ci(c.cluster_id)];
+  // When dimmed: cluster exists but isn't in the active set — gray it out
   const effectiveAct = dimmed ? 0 : act;
   const effectiveBlink = dimmed ? false : blink;
-  const isGlowing = selected || effectiveBlink || effectiveAct > 0.3;
   return (
     <div
       onClick={onClick}
-      className="cursor-pointer rounded-lg border transition-all duration-500"
+      className="cursor-pointer rounded-lg border transition-all duration-300"
       style={{
-        borderColor: isGlowing ? color : "#1f2937",
-        backgroundColor: isGlowing
-          ? `${color}18`
-          : dimmed
-            ? "#0a0a0f"
-            : "#111827",
-        boxShadow: selected
-          ? `0 0 20px ${color}60, 0 0 40px ${color}20`
-          : effectiveBlink
-            ? `0 0 14px ${color}50`
-            : effectiveAct > 0.3
-              ? `0 0 8px ${color}30`
-              : "none",
-        opacity: dimmed ? 0.15 : 1,
-        transform: isGlowing ? "scale(1.02)" : "scale(1)",
+        borderColor: effectiveAct > 0.1 ? color : "#1f2937",
+        backgroundColor: effectiveAct > 0.1 ? `${color}10` : "#111827",
+        boxShadow: effectiveBlink
+          ? `0 0 14px ${color}50`
+          : effectiveAct > 0.3
+            ? `0 0 6px ${color}25`
+            : "none",
+        opacity: dimmed ? 0.3 : 1,
       }}
     >
       <div className="p-1.5 flex items-center gap-1.5">
         <div className="relative flex-shrink-0">
           <div
             className="w-2.5 h-2.5 rounded-full"
-            style={{ backgroundColor: dimmed ? "#1a1a2e" : color }}
+            style={{ backgroundColor: dimmed ? "#374151" : color }}
           />
-          {(effectiveBlink || selected) && (
+          {effectiveBlink && (
             <div
               className="absolute inset-0 rounded-full animate-ping"
               style={{ backgroundColor: color, opacity: 0.35 }}
             />
           )}
         </div>
-        <span
-          className={`text-[10px] font-medium truncate flex-1 ${dimmed ? "text-gray-700" : "text-gray-300"}`}
-        >
+        <span className={`text-[10px] font-medium truncate flex-1 ${dimmed ? "text-gray-600" : "text-gray-300"}`}>
           {c.label || `Cluster ${c.cluster_id}`}
         </span>
         <span className="text-[8px] text-gray-600">{c.neuron_count}n</span>
@@ -229,30 +217,23 @@ function Pill({
       {effectiveAct > 0.05 && (
         <div className="mx-1.5 mb-1 h-0.5 rounded-full bg-gray-800 overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-500"
+            className="h-full rounded-full transition-all duration-300"
             style={{ backgroundColor: color, width: `${effectiveAct * 100}%` }}
           />
         </div>
       )}
       {open && !dimmed && (
-        <div className="px-1.5 pb-1.5 space-y-1">
-          <div className="grid grid-cols-2 gap-1 text-[8px]">
-            <div className="p-1 bg-gray-900/40 rounded">
-              <span className="text-gray-600">Out° </span>
-              {c.avg_out_degree}
-            </div>
-            <div className="p-1 bg-gray-900/40 rounded">
-              <span className="text-gray-600">In° </span>
-              {c.avg_in_degree}
-            </div>
+        <div className="px-1.5 pb-1.5 grid grid-cols-2 gap-1 text-[8px]">
+          <div className="p-1 bg-gray-900/40 rounded">
+            <span className="text-gray-600">Out° </span>
+            {c.avg_out_degree}
           </div>
-          {c.label_confidence != null && c.label_confidence > 0 && (
-            <div className="text-[7px] text-gray-500">
-              Confidence: {(c.label_confidence * 100).toFixed(0)}%
-            </div>
-          )}
+          <div className="p-1 bg-gray-900/40 rounded">
+            <span className="text-gray-600">In° </span>
+            {c.avg_in_degree}
+          </div>
           {c.hub_neurons.length > 0 && (
-            <div className="p-1 bg-gray-900/40 rounded flex gap-0.5 flex-wrap text-[8px]">
+            <div className="col-span-2 p-1 bg-gray-900/40 rounded flex gap-0.5 flex-wrap">
               {c.hub_neurons.map((h) => (
                 <span
                   key={h.neuron}
@@ -272,6 +253,7 @@ function Pill({
 // ═══════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════
+
 export function GraphPage() {
   const [cd, setCd] = useState<ClusterData | null>(null);
   const [ar, setAr] = useState<ActResult | null>(null);
@@ -280,24 +262,21 @@ export function GraphPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [head, setHead] = useState(0);
-  const [beta, setBeta] = useState(0.1);
+  const [beta, setBeta] = useState(0.02);
   const [layer, setLayer] = useState(-1);
   const [text, setText] = useState("");
   const [edges, setEdges] = useState(true);
   const [expCl, setExpCl] = useState<number | null>(null);
-
-  // hlCl = cluster highlighted by click (non-inference mode)
   const [hlCl, setHlCl] = useState<number | null>(null);
 
-  // Playback
+  // Playback — ONLY updates sidebar, NOT the 3D graph
   const [pIdx, setPIdx] = useState(-1);
   const [playing, setPlaying] = useState(false);
   const pTimer = useRef<any>(null);
   const gRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState({ width: 800, height: 600 });
   const bTimer = useRef<any>(null);
-
-  const PLAYBACK_DELAY = 400; // ms per token
 
   // ── Load clusters ──
   const load = useCallback(async (h: number, b: number) => {
@@ -306,14 +285,21 @@ export function GraphPage() {
     setAr(null);
     setPIdx(-1);
     setPlaying(false);
-    setHlCl(null);
     try {
       const r = await api.get("/graph/clusters/french", {
-        params: { head: h, beta: b, max_nodes: 800 },
+        params: { head: h, beta: b, max_nodes: 200 },
         timeout: 60000,
       });
+      console.log(
+        "[GRAPH] Loaded:",
+        r.data.n_display_nodes,
+        "nodes,",
+        r.data.n_display_edges,
+        "edges, beta_eff:",
+        r.data.beta_effective,
+      );
       setCd(r.data);
-      hasZoomed.current = false;
+      hasZoomed.current = false; // allow zoomToFit on new data
     } catch (e: any) {
       setError(e?.response?.data?.detail || e?.message || "Failed");
     } finally {
@@ -325,40 +311,42 @@ export function GraphPage() {
     load(head, beta);
   }, [head]); // eslint-disable-line
 
+  // ── Measure container for explicit ForceGraph3D dimensions ──
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) {
+        setDims({ width: Math.round(width), height: Math.round(height) });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-
-  // ── Auto-fit camera ONCE to show full brain ──
+  // ── Auto-fit camera ONCE after initial layout stabilizes ──
   const hasZoomed = useRef(false);
-  const doZoomToFit = useCallback(() => {
+  const handleEngineStop = useCallback(() => {
     if (hasZoomed.current) return;
     const fg = gRef.current;
     if (!fg) return;
-    fg.zoomToFit(800, 80); // generous padding to show entire brain
+    console.log("[GRAPH] Initial layout done, fitting camera");
+    fg.zoomToFit(400, 60);
     hasZoomed.current = true;
   }, []);
-  const handleEngineStop = useCallback(() => {
-    doZoomToFit();
-  }, [doZoomToFit]);
-  useEffect(() => {
-    if (!cd || hasZoomed.current) return;
-    const t = setTimeout(() => doZoomToFit(), 2500);
-    return () => clearTimeout(t);
-  }, [cd, doZoomToFit]);
-
-  // ── Beta debounce ──
   useEffect(() => {
     if (bTimer.current) clearTimeout(bTimer.current);
     bTimer.current = setTimeout(() => load(head, beta), 700);
     return () => clearTimeout(bTimer.current);
   }, [beta]); // eslint-disable-line
 
-  // ── Inference: run text, then start auto-playback ──
+  // ── Inference ──
   const run = useCallback(async () => {
     if (!text.trim() || !cd) return;
     setActivating(true);
     setPIdx(-1);
     setPlaying(false);
-    setHlCl(null);
     try {
       const r = await api.post("/graph/activate", {
         text,
@@ -367,7 +355,6 @@ export function GraphPage() {
         layer,
       });
       setAr(r.data);
-      // Auto-start playback
       setPIdx(0);
       setPlaying(true);
     } catch (e: any) {
@@ -377,7 +364,7 @@ export function GraphPage() {
     }
   }, [text, head, layer, cd]);
 
-  // ── Auto-play timer — advances token index automatically ──
+  // ── Playback timer — ONLY advances pIdx, nothing else ──
   useEffect(() => {
     if (pTimer.current) clearInterval(pTimer.current);
     if (playing && ar && pIdx >= 0) {
@@ -389,138 +376,156 @@ export function GraphPage() {
           }
           return p + 1;
         });
-      }, PLAYBACK_DELAY);
+      }, 1500);
     }
     return () => {
       if (pTimer.current) clearInterval(pTimer.current);
     };
   }, [playing, ar]); // eslint-disable-line
 
-  // ── Current token data ──
+  // ── Current token activation (cheap lookup) ──
   const curTok =
     pIdx >= 0 && ar && pIdx < ar.per_token.length ? ar.per_token[pIdx] : null;
   const curMap: Record<number, number> = {};
   const blinkIds = new Set<number>();
   if (curTok) {
-    // Sort activations to find the top cluster
-    const sorted = [...curTok.cluster_activations]
-      .filter(ca => ca.cluster_id > 0 && ca.activation > 0)
-      .sort((a, b) => b.activation - a.activation);
-    const topAct = sorted.length > 0 ? sorted[0].activation : 1;
     for (const ca of curTok.cluster_activations) {
       curMap[ca.cluster_id] = ca.normalized;
-      // Only blink if this cluster has >= 40% of the top cluster's activation
-      if (ca.activation >= topAct * 0.4 && ca.activation > 0) blinkIds.add(ca.cluster_id);
+      if (ca.normalized > 0.25) blinkIds.add(ca.cluster_id);
     }
   }
 
-  // ── Node → cluster lookup ──
+  // ── Node-cluster lookup ──
   const nodeClMap = useMemo(() => {
     const m: Record<number, number> = {};
     if (cd) for (const n of cd.nodes) m[n.id] = n.cluster;
     return m;
   }, [cd]);
 
+  // ── Per-node activation map from current token ──
+  const nodeActMap = useMemo(() => {
+    const m: Record<number, number> = {};
+    if (!curTok || !cd) return m;
+    const clAct: Record<number, number> = {};
+    for (const ca of curTok.cluster_activations)
+      clAct[ca.cluster_id] = ca.normalized;
+    for (const n of cd.nodes) {
+      const a = clAct[n.cluster] ?? 0;
+      if (a > 0.05) m[n.id] = a;
+    }
+    return m;
+  }, [curTok, cd]);
 
-
-  // ── Active clusters for current token (top-N by activation, not threshold) ──
+  // ── Active clusters for current token (auto-filter during playback) ──
+  // Use top-3 clusters by normalized mean activation, PLUS any others above 0.5
+  // This ensures true BDH sparsity — only genuinely selective clusters show
   const activeClusters = useMemo(() => {
     const s = new Set<number>();
-    if (!curTok || !cd) return s;
-    // Sort cluster activations descending, pick only top clusters that are truly firing
-    const sorted = [...curTok.cluster_activations]
-      .filter(ca => ca.cluster_id > 0 && ca.activation > 0)
-      .sort((a, b) => b.activation - a.activation);
-    if (sorted.length === 0) return s;
-    // Take top cluster, then include others only if they have >= 30% of top's activation
-    const topAct = sorted[0].activation;
-    for (const ca of sorted) {
-      if (ca.activation >= topAct * 0.3) {
-        s.add(ca.cluster_id);
-      }
+    if (!curTok) return s;
+    const cas = curTok.cluster_activations;
+    // Already sorted by mean_activation (descending) from backend
+    // Take top 3 always
+    const topN = Math.min(3, cas.length);
+    for (let i = 0; i < topN; i++) {
+      if (cas[i].normalized > 0.1) s.add(cas[i].cluster_id);
+    }
+    // Also include any cluster with very high normalized score
+    for (const ca of cas) {
+      if (ca.normalized > 0.5) s.add(ca.cluster_id);
     }
     return s;
-  }, [curTok, cd, nodeClMap]);
+  }, [curTok]);
 
+  // ── Determine which clusters are visible right now ──
   const isPlayback = pIdx >= 0 && !!curTok;
 
-
-
-  // ═══ GRAPH DATA — nodes with cumulative activation, no pinned positions ═══
+  // ── Graph data — bake visibility into color/val so ForceGraph3D always respects it ──
   const graphData = useMemo(() => {
     if (!cd) return { nodes: [], links: [] };
-    const nodeActs = ar?.node_activations || {};
-    const nodes = cd.nodes.map((n) => ({
-      ...n,
-      activation: nodeActs[String(n.id)] ? Number(nodeActs[String(n.id)]) : 0,
-    }));
+    const hasAct = Object.keys(nodeActMap).length > 0;
+    const playbackActive = isPlayback && activeClusters.size > 0;
+
+    // Build a set of visible node IDs for link filtering
+    const visibleNodeIds = new Set<number>();
+
+    const nodes = cd.nodes.map((n) => {
+      const c = ci(n.cluster || 0);
+      const act = nodeActMap[n.id] ?? 0;
+
+      // ── Determine visibility ──
+      let visible = true;
+      if (playbackActive) {
+        visible = activeClusters.has(n.cluster);
+      } else if (hlCl !== null) {
+        visible = n.cluster === hlCl;
+      }
+
+      if (visible) visibleNodeIds.add(n.id);
+
+      // ── Color & size: hidden nodes become transparent & tiny ──
+      let color: string;
+      let val: number;
+      if (!visible) {
+        color = "rgba(0,0,0,0)";
+        val = 0.001;
+      } else {
+        color = CC[c];
+        if (hasAct) {
+          if (act > 0.5) color = CC_BRIGHT[c];
+          else if (act > 0.15) color = CC[c];
+          else color = CC_DIM[c];
+        }
+        const base = n.is_hub ? 6 : 3;
+        val = base;
+        if (act > 0.5) val = base * 1.8;
+        else if (act > 0.15) val = base * 1.3;
+        // During playback, boost small-cluster nodes so they're visible
+        if (playbackActive && val < 5) val = 5;
+      }
+
+      return {
+        id: n.id,
+        cluster: n.cluster,
+        degree: n.degree,
+        is_hub: n.is_hub,
+        color,
+        val,
+        _visible: visible,
+      };
+    });
+
     const links = edges
-      ? cd.edges.map((e) => ({
-          source: typeof e.source === "object" ? (e.source as any).id : e.source,
-          target: typeof e.target === "object" ? (e.target as any).id : e.target,
-          weight: e.weight,
-          same_cluster: e.same_cluster,
-        }))
+      ? cd.edges.map((e) => {
+          const sid = typeof e.source === "object" ? (e.source as any).id : e.source;
+          const tid = typeof e.target === "object" ? (e.target as any).id : e.target;
+          const linkVisible = visibleNodeIds.has(sid) && visibleNodeIds.has(tid);
+          return {
+            source: sid,
+            target: tid,
+            same_cluster: e.same_cluster,
+            _visible: linkVisible,
+          };
+        })
       : [];
+
+    const visibleCount = nodes.filter((n) => n._visible).length;
+    console.log("[GRAPH] graphData:", nodes.length, "nodes,", links.length, "links. Visible:", visibleCount, "playback:", playbackActive, "activeClusters:", activeClusters.size);
     return { nodes, links };
-  }, [cd, ar, edges]);
+  }, [cd, edges, nodeActMap, activeClusters, hlCl, isPlayback]);
 
-  // ═══ NODE THREE OBJECT — 3D spheres with emissive glow (Nilay style) ═══
-  const nodeThreeObject = useCallback(
-    (node: any) => {
-      const cluster = node.cluster || 0;
-      const isHub = node.is_hub;
-      const activation = node.activation || 0;
-      const isHl = hlCl !== null && cluster === hlCl;
-      const color = CC[ci(cluster)];
-      const [r, g, b] = hexToRgb(color);
-
-      // Cluster blinking from per-token data
-      const isBlinking = blinkIds.has(cluster);
-      const blinkBoost = isBlinking ? 1.8 : 1;
-
-      const baseSize = isHub ? 3 : 1.5;
-      const actBoost = activation > 0 ? 1 + activation * 2.5 : 0;
-      const hlBoost = isHl ? 1.4 : 1;
-      const size = (baseSize + actBoost) * hlBoost * blinkBoost;
-
-      const dim = hlCl !== null && !isHl ? 0.12 : 1.0;
-      const emissiveStr = Math.max(
-        activation > 0.1 ? activation * 0.7 : 0,
-        isHl ? 0.25 : 0,
-        isBlinking ? 0.6 : 0,
-      );
-
-      const geo = new THREE.SphereGeometry(size, 10, 10);
-      const mat = new THREE.MeshLambertMaterial({
-        color: new THREE.Color(r / 255 * dim, g / 255 * dim, b / 255 * dim),
-        emissive: new THREE.Color(
-          r / 255 * emissiveStr,
-          g / 255 * emissiveStr,
-          b / 255 * emissiveStr,
-        ),
-        transparent: dim < 1,
-        opacity: dim < 1 ? 0.25 : 1,
-      });
-      return new THREE.Mesh(geo, mat);
-    },
-    [hlCl, blinkIds],
-  );
-
-  // ── Link color ──
+  // ── Link color — hidden links become transparent ──
   const linkColor = useCallback(
     (link: any) => {
-      if (!edges) return "rgba(0,0,0,0)";
+      if (!link._visible) return "rgba(0,0,0,0)";
       const sid =
         typeof link.source === "object" ? link.source.id : link.source;
-      if (link.same_cluster) {
-        const sc = nodeClMap[sid] ?? 0;
-        const dimmed = hlCl !== null && sc !== hlCl;
-        return dimmed ? "rgba(40,40,55,0.04)" : `${CC[ci(sc)]}44`;
+      const sc = nodeClMap[sid] ?? 0;
+      if (link.same_cluster && sc > 0) {
+        return `${CC[ci(sc)]}55`;
       }
-      return hlCl !== null ? "rgba(40,40,55,0.03)" : "rgba(120,120,150,0.12)";
+      return "rgba(90,90,120,0.12)";
     },
-    [nodeClMap, hlCl, edges],
+    [nodeClMap],
   );
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -530,49 +535,17 @@ export function GraphPage() {
     }
   };
 
-  // ── Stop playback and clear when clicking cluster during playback ──
-  const handleClusterClick = useCallback(
-    (cid: number) => {
-      if (isPlayback) {
-        // During playback, clicking a cluster stops it and selects that cluster
-        setPlaying(false);
-        setPIdx(-1);
-        setAr(null);
-        setHlCl(cid);
-        setExpCl((prev) => (prev === cid ? null : cid));
-      } else {
-        // Non-playback: toggle cluster highlight
-        setHlCl((prev) => (prev === cid ? null : cid));
-        setExpCl((prev) => (prev === cid ? null : cid));
-      }
-    },
-    [isPlayback],
-  );
-
   // ═════════════════════════════════════════════════════════════════════
   return (
-    <div
-      className="h-full flex flex-row"
-      style={{ height: "100%", minHeight: 0 }}
-    >
-      {/* LEFT — graph + controls */}
+    <div className="h-full flex flex-col lg:flex-row" style={{ height: '100%', minHeight: 0 }}>
+      {/* LEFT */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header */}
         <div className="px-5 pt-3 pb-0.5 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Brain size={20} className="text-bdh-accent" />
-            <h1 className="text-xl font-bold">
-              <span className="gradient-text">Neural Graph</span> Explorer
-            </h1>
-          </div>
+          <h1 className="text-xl font-bold">
+            <span className="gradient-text">Graph Brain</span> Explorer
+          </h1>
           <p className="text-gray-600 text-[11px]">
-            G*=D<sub>x</sub>E neuron interaction graph · Louvain clusters ·
-            French model
-            {isPlayback && (
-              <span className="text-bdh-accent ml-2">
-                ● LIVE — watching the brain think
-              </span>
-            )}
+            G*=D<sub>x</sub>E · Louvain clusters · French model
           </p>
         </div>
 
@@ -616,21 +589,17 @@ export function GraphPage() {
             <Eye size={13} />
           </button>
           <button
-            onClick={() => {
-              gRef.current?.zoomToFit(600, 80);
-            }}
+            onClick={() =>
+              gRef.current?.cameraPosition(
+                { x: 0, y: 0, z: 180 },
+                { x: 0, y: 0, z: 0 },
+                500,
+              )
+            }
             className="p-1 rounded bg-gray-800/50 text-gray-500 hover:bg-gray-700"
           >
             <RotateCcw size={13} />
           </button>
-          {hlCl !== null && !isPlayback && (
-            <button
-              onClick={() => setHlCl(null)}
-              className="px-2 py-0.5 rounded text-[9px] bg-gray-700 text-gray-300 hover:bg-gray-600"
-            >
-              Show All
-            </button>
-          )}
         </div>
 
         {error && (
@@ -664,7 +633,7 @@ export function GraphPage() {
             </div>
           )}
 
-        {/* ── 3D Graph ── */}
+        {/* 3D Graph */}
         <div
           ref={containerRef}
           className="flex-1 relative mx-5 mb-1.5 rounded-xl overflow-hidden border border-gray-800/40 bg-[#07070c]"
@@ -677,42 +646,40 @@ export function GraphPage() {
             <ForceGraph3D
               ref={gRef}
               graphData={graphData}
-              nodeThreeObject={nodeThreeObject}
-              nodeThreeObjectExtend={false}
+              width={dims.width}
+              height={dims.height}
+              nodeColor="color"
+              nodeVal="val"
+              nodeRelSize={6}
+              nodeVisibility="_visible"
               linkColor={linkColor}
-              linkOpacity={0.25}
-              linkWidth={0.4}
+              linkOpacity={0.4}
+              linkWidth={0.3}
+              linkVisibility="_visible"
               backgroundColor="#07070c"
-              enableNodeDrag={true}
-              enableNavigationControls={true}
+              enableNodeDrag={false}
               controlType="orbit"
               nodeLabel={(n: any) =>
-                `#${n.id} · Cluster ${n.cluster} · Deg ${n.degree}${n.is_hub ? " (HUB)" : ""}`
+                `#${n.id} C${n.cluster} D${n.degree}${n.is_hub ? " HUB" : ""}`
               }
               onNodeClick={(n: any) =>
-                setHlCl((prev) => (prev === n.cluster ? null : n.cluster))
+                setHlCl((p) => (p === n.cluster ? null : n.cluster))
               }
               onBackgroundClick={() => setHlCl(null)}
               onEngineStop={handleEngineStop}
-              showNavInfo={false}
-              d3AlphaDecay={0.025}
+              d3AlphaDecay={0.02}
               d3VelocityDecay={0.3}
-              warmupTicks={60}
-              cooldownTicks={180}
-              width={undefined}
-              height={undefined}
+              warmupTicks={120}
+              cooldownTicks={200}
             />
           ) : (
             !loading && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <p className="text-gray-700 text-[10px]">
-                  No data — start the backend
-                </p>
+                <p className="text-gray-700 text-[10px]">No data</p>
               </div>
             )
           )}
 
-          {/* Overlay stats */}
           {cd && !loading && (
             <div className="absolute top-2 left-2 flex gap-1 pointer-events-none">
               <div className="px-1.5 py-0.5 rounded bg-black/60 text-[8px] font-mono text-gray-500">
@@ -724,19 +691,19 @@ export function GraphPage() {
             </div>
           )}
 
-          {/* Token bar during playback */}
+          {/* Token bar */}
           {curTok && ar && (
             <div className="absolute bottom-1.5 left-2 right-2 pointer-events-none">
-              <div className="px-2 py-1.5 rounded-lg bg-black/80 backdrop-blur flex items-center gap-0.5 overflow-x-auto">
-                <span className="text-[7px] text-gray-600 mr-1 flex-shrink-0 uppercase">
-                  Token
+              <div className="px-2 py-1 rounded bg-black/75 flex items-center gap-0.5 overflow-x-auto">
+                <span className="text-[7px] text-gray-600 mr-0.5 flex-shrink-0">
+                  TOK
                 </span>
                 {ar.input_chars.map((ch, i) => (
                   <span
                     key={i}
-                    className={`px-0.5 text-[10px] font-mono rounded flex-shrink-0 transition-all duration-300 ${
+                    className={`px-0.5 text-[9px] font-mono rounded flex-shrink-0 ${
                       i === pIdx
-                        ? "bg-bdh-accent text-white px-1.5 py-0.5 scale-110"
+                        ? "bg-bdh-accent text-white px-1"
                         : i < pIdx
                           ? "text-gray-500"
                           : "text-gray-700"
@@ -745,34 +712,18 @@ export function GraphPage() {
                     {ch}
                   </span>
                 ))}
-                {(() => {
-                  const total = cd?.nodes.length ?? 0;
-                  const na = ar?.node_activations || {};
-                  const firing =
-                    total > 0
-                      ? cd!.nodes.filter((n) => (na[String(n.id)] ?? 0) > 0)
-                          .length
-                      : 0;
-                  const pct =
-                    total > 0 ? ((1 - firing / total) * 100).toFixed(0) : "—";
-                  return (
-                    <span className="ml-auto text-[7px] text-bdh-accent/70 flex-shrink-0 whitespace-nowrap">
-                      {firing}/{total} fire · {pct}% sparse
-                    </span>
-                  );
-                })()}
               </div>
             </div>
           )}
         </div>
 
-        {/* ── Inference input ── */}
+        {/* Inference */}
         <div className="px-5 pb-3 flex-shrink-0">
           <div className="glass-card p-2">
             <div className="flex items-center gap-1 mb-1">
               <Zap size={11} className="text-bdh-accent" />
               <span className="text-[9px] font-semibold text-gray-400">
-                Live Inference — type text, watch the brain think
+                Live Inference
               </span>
               {ar && (
                 <div className="ml-auto flex gap-0.5">
@@ -804,7 +755,6 @@ export function GraphPage() {
                       setPlaying(false);
                       setPIdx(-1);
                       setAr(null);
-                      setHlCl(null);
                     }}
                     className="p-0.5 rounded bg-gray-800 text-gray-500 hover:text-gray-300"
                   >
@@ -843,7 +793,7 @@ export function GraphPage() {
                   <Loader2 size={11} className="animate-spin" />
                 ) : (
                   <Send size={11} />
-                )}{" "}
+                )}
                 Run
               </button>
             </div>
@@ -853,7 +803,6 @@ export function GraphPage() {
                 "Germany and France signed the treaty",
                 "Le dollar américain",
                 "The European Parliament",
-                "le changement climatique menace",
               ].map((ex) => (
                 <button
                   key={ex}
@@ -868,12 +817,13 @@ export function GraphPage() {
         </div>
       </div>
 
-      {/* ── RIGHT SIDEBAR ── */}
-      <aside className="w-64 border-l border-gray-800/50 bg-gray-900/30 flex flex-col overflow-hidden flex-shrink-0">
+      {/* RIGHT SIDEBAR — this is what updates during playback, NOT the 3D graph */}
+      <aside className="w-60 lg:w-68 border-l border-gray-800/50 bg-gray-900/30 flex flex-col overflow-hidden flex-shrink-0">
         <div className="p-2 border-b border-gray-800/50 flex-shrink-0">
           <div className="flex items-center justify-between">
             <h2 className="text-[9px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <Activity size={9} className="text-bdh-accent" /> Clusters
+              <Activity size={9} className="text-bdh-accent" />
+              Clusters
             </h2>
             {cd && (
               <span className="text-[7px] font-mono text-gray-700">
@@ -888,30 +838,6 @@ export function GraphPage() {
               </div>
               <div className="text-sm font-mono text-white">
                 '{curTok.char}'
-              </div>
-              <div className="text-[7px] text-gray-500 mt-0.5">
-                {activeClusters.size} cluster
-                {activeClusters.size !== 1 ? "s" : ""} active
-              </div>
-            </div>
-          )}
-          {hlCl !== null && !isPlayback && (
-            <div
-              className="mt-1 px-1.5 py-1 rounded border border-gray-700"
-              style={{
-                borderColor: CC[ci(hlCl)] + "40",
-                backgroundColor: CC[ci(hlCl)] + "08",
-              }}
-            >
-              <div
-                className="text-[7px] uppercase"
-                style={{ color: CC[ci(hlCl)] }}
-              >
-                Selected Cluster
-              </div>
-              <div className="text-sm font-mono text-white">
-                {cd?.clusters.find((c) => c.cluster_id === hlCl)?.label ||
-                  `Cluster ${hlCl}`}
               </div>
             </div>
           )}
@@ -938,19 +864,16 @@ export function GraphPage() {
                 }
                 blink={blinkIds.has(c.cluster_id)}
                 open={expCl === c.cluster_id}
-                selected={hlCl === c.cluster_id && !isPlayback}
-                dimmed={
-                  (isPlayback &&
-                    activeClusters.size > 0 &&
-                    !activeClusters.has(c.cluster_id)) ||
-                  (hlCl !== null && !isPlayback && hlCl !== c.cluster_id)
-                }
-                onClick={() => handleClusterClick(c.cluster_id)}
+                dimmed={isPlayback && activeClusters.size > 0 && !activeClusters.has(c.cluster_id)}
+                onClick={() => {
+                  setExpCl((p) => (p === c.cluster_id ? null : c.cluster_id));
+                  setHlCl((p) => (p === c.cluster_id ? null : c.cluster_id));
+                }}
               />
             ))}
           {cd?.clusters.find((c) => c.cluster_id === 0) && (
             <div className="pt-0.5 border-t border-gray-800/40 text-[7px] text-gray-700 flex items-center gap-0.5">
-              <Info size={7} />{" "}
+              <Info size={7} />
               {cd.clusters.find((c) => c.cluster_id === 0)?.neuron_count}{" "}
               isolated
             </div>
@@ -966,9 +889,6 @@ export function GraphPage() {
                   → eff={cd.beta_effective.toFixed(3)}
                 </span>
               )}
-          </p>
-          <p className="text-[7px] text-gray-700 mt-0.5">
-            Click cluster to isolate · Enter text to watch brain activate
           </p>
         </div>
       </aside>

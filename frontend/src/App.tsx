@@ -9,11 +9,14 @@ import { HebbianPage } from "./pages/HebbianPage";
 import { MergePage } from "./pages/MergePage";
 import { FindingsPage } from "./pages/FindingsPage";
 import { LearnBDHPage } from "./pages/LearnBDHPage";
+import { GraphTest } from "./pages/GraphTest";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Diagnostic route — remove after testing */}
+        <Route path="/graph-test" element={<GraphTest />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="architecture" element={<ArchitecturePage />} />

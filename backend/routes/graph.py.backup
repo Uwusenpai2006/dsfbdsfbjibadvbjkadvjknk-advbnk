@@ -51,7 +51,7 @@ class ActivateRequest(BaseModel):
 # ── Caches ──────────────────────────────────────────────────────────────
 _gstar: Dict[str, np.ndarray] = {}
 _clusters: Dict[str, Dict] = {}
-_v1_models: Dict[str, Any] = {}
+_v1_models: Dict[str, Any] = {}   # V1 model cache for graph viz
 _v1_configs: Dict[str, Any] = {}
 
 
@@ -60,8 +60,9 @@ def _ck(m: str, h: int, b: float) -> str: return f"{m}_{h}_{b:.4f}"
 
 
 def _get_v1_model(model_name: str, svc):
-    """Load the V1 model (french_model.pt) which has model.encoder / model.decoder
-    as plain tensors (not ParameterLists). Required for correct G* computation."""
+    """Load the V1 model (french_model.pt) for graph visualization.
+    The V1 model has model.encoder / model.decoder (not ParameterLists).
+    This produces the correct G* matrix that the graph was designed around."""
     if model_name in _v1_models:
         return _v1_models[model_name], _v1_configs[model_name]
     from pathlib import Path
@@ -70,10 +71,12 @@ def _get_v1_model(model_name: str, svc):
     from bdh import BDH, BDHConfig
     v1_path = Path(svc.checkpoint_dir) / model_name / f"{model_name}_model.pt"
     if not v1_path.exists():
+        # Fallback: use whatever the service has
         return svc.get_or_load(model_name), svc.get_config(model_name)
     ckpt = torch.load(str(v1_path), map_location=svc.device, weights_only=False)
     cfg = BDHConfig(**ckpt["config"]) if "config" in ckpt else svc.get_config(model_name)
     state = ckpt.get("model_state_dict", ckpt)
+    # Strip _orig_mod. prefix from compiled models
     state = {k.replace("_orig_mod.", ""): v for k, v in state.items()}
     model = BDH(cfg)
     model.load_state_dict(state)
@@ -102,8 +105,26 @@ def get_gstar(model, cfg, head: int, mname: str) -> np.ndarray:
 def compute(G: np.ndarray, N: int, beta: float):
     t0 = time.perf_counter()
 
+    # ── Adaptive beta: auto-lower if user's beta yields too few edges ──
+    beta_eff = beta
+    above_test = int((G >= beta).sum())
+    min_edges_needed = max(N, 100)
+    if above_test < min_edges_needed:
+        pos = G.ravel()
+        pos = pos[pos > 0]
+        if len(pos) > 0:
+            for pct in [99.5, 99, 98, 97, 95, 90, 85, 80]:
+                candidate = float(np.percentile(pos, pct))
+                if int((G >= candidate).sum()) >= min_edges_needed:
+                    beta_eff = candidate
+                    break
+            else:
+                beta_eff = float(np.median(pos))
+            print(f"[GRAPH] Adaptive β: user={beta:.4f} → eff={beta_eff:.4f} "
+                  f"(user produced {above_test} edges, need ≥{min_edges_needed})")
+
     # 1) Threshold — fully vectorized, no Python loop
-    above = G >= beta
+    above = G >= beta_eff
     ei, ej = np.nonzero(above)
     ew = G[ei, ej]
     ne = len(ei)
@@ -186,12 +207,39 @@ def compute(G: np.ndarray, N: int, beta: float):
 
     # 4) Subsample nodes — vectorized
     active = np.where(tot_deg > 0)[0]
+    if len(active) < 20:
+        # Min-node guarantee: expand using top nodes by G* row magnitude
+        row_mag = np.abs(G).sum(axis=1)
+        fallback_idx = np.argsort(row_mag)[-20:]
+        active = np.unique(np.concatenate([active, fallback_idx]))
+        for ni in fallback_idx:
+            if labels[ni] == 0:
+                labels[ni] = 1
+        if ncl < 1:
+            ncl = 1
+        print(f"[GRAPH] Min-node guarantee: expanded to {len(active)} active nodes")
     if len(active) == 0:
-        return _empty_result(N, beta, ncl, modul, meta, labels)
+        return _empty_result(N, beta_eff, ncl, modul, meta, labels)
 
     hub_thr = np.percentile(tot_deg[active], 93) if len(active) > 20 else 0
     hubs = set(active[tot_deg[active] >= max(hub_thr, 1)].tolist())
     picked = set(hubs)
+
+    # ── Guarantee at least 1 representative per cluster ──
+    # Small clusters often have 0 nodes in the edge graph; pick their
+    # highest-G*-magnitude neuron so every cluster is represented visually.
+    row_mag = np.abs(G).sum(axis=1)
+    for cid in range(1, ncl + 1):
+        cmems = np.where(labels == cid)[0]
+        if len(cmems) == 0:
+            continue
+        # Check if this cluster already has a node picked
+        if any(n in picked for n in cmems):
+            continue
+        # Pick the neuron with highest G* row magnitude from this cluster
+        best = cmems[np.argmax(row_mag[cmems])]
+        picked.add(int(best))
+
     budget = MAX_VIZ_NODES - len(picked)
 
     if budget > 0:
@@ -244,10 +292,11 @@ def compute(G: np.ndarray, N: int, beta: float):
     hc, he = np.histogram(fs, bins=50, range=hr)
     hist = [{"x": round(float((he[i]+he[i+1])/2), 4), "y": int(hc[i])} for i in range(len(hc))]
 
-    print(f"[GRAPH] β={beta:.3f} thr={t1-t0:.2f}s louv={t2-t1:.2f}s viz={t3-t2:.2f}s tot={t3-t0:.2f}s | raw_e={ne} cl={ncl} show={len(nodes)}n/{len(edges)}e")
+    print(f"[GRAPH] β={beta:.3f} eff={beta_eff:.4f} thr={t1-t0:.2f}s louv={t2-t1:.2f}s viz={t3-t2:.2f}s tot={t3-t0:.2f}s | raw_e={ne} cl={ncl} show={len(nodes)}n/{len(edges)}e")
 
     return {
-        "beta": beta, "n_neurons": int(N), "n_total_edges": int(ne),
+        "beta": float(beta), "beta_effective": float(beta_eff),
+        "n_neurons": int(N), "n_total_edges": int(ne),
         "n_display_nodes": len(nodes), "n_display_edges": len(edges),
         "num_clusters": ncl, "modularity": round(float(modul), 4),
         "density": round(float(ne / max(N*N, 1)), 6),
@@ -258,7 +307,8 @@ def compute(G: np.ndarray, N: int, beta: float):
 
 
 def _empty_result(N, beta, ncl, modul, meta, labels):
-    return {"beta": beta, "n_neurons": int(N), "n_total_edges": 0,
+    return {"beta": float(beta), "beta_effective": float(beta),
+            "n_neurons": int(N), "n_total_edges": 0,
             "n_display_nodes": 0, "n_display_edges": 0,
             "num_clusters": ncl, "modularity": round(float(modul), 4),
             "density": 0, "nodes": [], "edges": [],
@@ -300,14 +350,14 @@ def activate(request: ActivateRequest, req: Request):
 
     # Get cached labels
     cd = None
-    for bt in [0.1, 0.05, 0.15, 0.08, 0.2]:
+    for bt in [0.02, 0.05, 0.01, 0.1, 0.03]:
         k = _ck(request.model_name, h, bt)
         if k in _clusters: cd = _clusters[k]; break
     if cd is None:
         G = get_gstar(model, cfg, h, request.model_name)
-        cd = compute(G, cfg.n_neurons, 0.1)
+        cd = compute(G, cfg.n_neurons, 0.02)
         cd["model_name"] = request.model_name; cd["head"] = h
-        _clusters[_ck(request.model_name, h, 0.1)] = cd
+        _clusters[_ck(request.model_name, h, 0.02)] = cd
 
     labels = cd["_labels"]
     ncl = cd["num_clusters"]
@@ -344,58 +394,33 @@ def activate(request: ActivateRequest, req: Request):
     tb = toks[0].cpu().tolist()
     chars = [chr(b) if 32 <= b < 127 else f"\\x{b:02x}" for b in tb]
 
-    # Per-token cluster activations + per-token node activations
-    # Build set of display node IDs for fast lookup
-    display_node_ids = set(nd["id"] for nd in cd["nodes"])
-    display_node_list = sorted(display_node_ids)
-
-    # ── SURPRISE NORMALIZATION ──
-    # Compute mean activation per display neuron across *all* tokens
-    # so neurons that fire identically for every token get downweighted,
-    # and neurons unique to THIS token get boosted.
-    mean_act = np.zeros(N, dtype=np.float32)
-    for ti in range(T):
-        mean_act += act[ti]
-    mean_act /= max(T, 1)
-
+    # Per-token cluster activations
+    # Use MEAN activation per neuron (not sum) to avoid big-cluster bias
+    # Also compute sparsity_ratio = fraction of neurons active in cluster
     per_tok = []
     cumul = np.zeros(N, dtype=np.float32)
     for ti in range(T):
         row = act[ti]
         cumul += row
         tcl = []
-        mx = 0.0
+        mx_mean = 0.0
         for cid, cm in cmasks.items():
-            s = float(row[cm].sum())
-            if s > mx: mx = s
-            tcl.append({"cluster_id": cid, "activation": round(s, 2),
-                        "active_neurons": int((row[cm] > 0).sum())})
+            cluster_acts = row[cm]
+            n_neurons = int(cm.sum())
+            total = float(cluster_acts.sum())
+            mean_act = total / max(n_neurons, 1)
+            active_count = int((cluster_acts > 0).sum())
+            sparsity_ratio = active_count / max(n_neurons, 1)
+            if mean_act > mx_mean: mx_mean = mean_act
+            tcl.append({"cluster_id": cid, "activation": round(total, 2),
+                        "mean_activation": round(mean_act, 4),
+                        "active_neurons": active_count,
+                        "cluster_size": n_neurons,
+                        "sparsity_ratio": round(sparsity_ratio, 4)})
         for x in tcl:
-            x["normalized"] = round(x["activation"] / max(mx, 1e-6), 4)
-
-        # Per-token node activations using SURPRISE scores
-        # surprise = raw_activation / (mean_activation + eps)
-        # This highlights neurons that fire MORE than their average
-        tok_na = {}
-        candidates = []
-        for nid in display_node_list:
-            v = float(row[nid])
-            if v > 0:
-                m = float(mean_act[nid])
-                surprise = v / (m + 1e-8)  # how much above average
-                candidates.append((nid, v, surprise))
-        # Sort by SURPRISE (not raw activation) and take top 40
-        candidates.sort(key=lambda x: -x[2])
-        top_k = candidates[:40]
-        if top_k:
-            # Normalize surprise scores to 0-1 range
-            max_surprise = top_k[0][2]
-            for nid, raw_v, surp in top_k:
-                tok_na[str(nid)] = round(surp / max_surprise, 4)
-
+            x["normalized"] = round(x["mean_activation"] / max(mx_mean, 1e-6), 4)
         per_tok.append({"token_idx": ti, "byte": tb[ti], "char": chars[ti],
-                        "cluster_activations": sorted(tcl, key=lambda c: -c["activation"]),
-                        "node_activations": tok_na})
+                        "cluster_activations": sorted(tcl, key=lambda c: -c["mean_activation"])})
 
     # Node overlay
     mx_c = float(cumul.max()) if cumul.max() > 0 else 1.0

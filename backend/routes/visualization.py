@@ -42,7 +42,7 @@ class HebbianTrackRequest(BaseModel):
 # =============================================================================
 
 @router.post("/playback")
-async def generate_playback(request: PlaybackRequest, req: Request):
+def generate_playback(request: PlaybackRequest, req: Request):
     """
     Generate playback data for frontend animation with interpretability data.
     """
@@ -436,7 +436,7 @@ async def generate_playback(request: PlaybackRequest, req: Request):
 
 
 @router.post("/hebbian-track")
-async def track_hebbian(request: HebbianTrackRequest, req: Request):
+def track_hebbian(request: HebbianTrackRequest, req: Request):
     """
     Track Hebbian σ dynamics word-by-word through BDH layers.
     

@@ -85,7 +85,7 @@ async def get_model_info(model_name: str, req: Request):
 
 
 @router.post("/load")
-async def load_model(request: LoadModelRequest, req: Request):
+def load_model(request: LoadModelRequest, req: Request):
     """
     Load a model checkpoint.
     """
@@ -133,7 +133,7 @@ async def unload_model(model_name: str, req: Request):
 
 
 @router.get("/{model_name}/graph")
-async def get_model_graph(
+def get_model_graph(
     model_name: str,
     req: Request,
     threshold: float = 0.01

@@ -39,7 +39,7 @@ class SideBySideRequest(BaseModel):
 # =============================================================================
 
 @router.post("/heritage-probe")
-async def heritage_probe(request: HeritageProbeRequest, req: Request):
+def heritage_probe(request: HeritageProbeRequest, req: Request):
     """
     Run a heritage probe on merged model: feed text, measure which neuron
     bank (model1-origin vs model2-origin) activates.
@@ -141,7 +141,7 @@ async def heritage_probe(request: HeritageProbeRequest, req: Request):
 # =============================================================================
 
 @router.post("/side-by-side")
-async def side_by_side(request: SideBySideRequest, req: Request):
+def side_by_side(request: SideBySideRequest, req: Request):
     """
     Generate text from all available models for comparison.
     """
