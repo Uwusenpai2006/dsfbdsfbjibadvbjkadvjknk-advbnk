@@ -8,14 +8,12 @@ export const api = axios.create({
 });
 
 /* ------------------------------------------------------------------ */
-<<<<<<< HEAD
 /*  HUGGINGFACE BACKEND (deployed BDH model)                           */
 /* ------------------------------------------------------------------ */
 const HF_API_URL =
   import.meta.env.VITE_BDH_API_URL || "http://localhost:7860";
 
 export const hfBackend = {
-  /** Check if HuggingFace backend is online */
   checkHealth: async (): Promise<{
     status: string;
     model_loaded: boolean;
@@ -29,7 +27,6 @@ export const hfBackend = {
     return res.json();
   },
 
-  /** Generate text using deployed BDH model */
   generate: async (
     prompt: string,
     maxNewTokens = 100,
@@ -59,8 +56,6 @@ export const hfBackend = {
 };
 
 /* ------------------------------------------------------------------ */
-=======
->>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
 /*  Backend connection status (reactive)                               */
 /* ------------------------------------------------------------------ */
 type StatusListener = (connected: boolean) => void;
@@ -69,7 +64,7 @@ let _backendConnected = false;
 
 export function onBackendStatus(fn: StatusListener) {
   _listeners.add(fn);
-  fn(_backendConnected); // notify immediately with current state
+  fn(_backendConnected);
   return () => _listeners.delete(fn);
 }
 export function isBackendConnected() {
@@ -82,7 +77,6 @@ function _setConnected(v: boolean) {
   }
 }
 
-// Health-check poller — runs every 5 s, marks backend up/down
 let _polling = false;
 export function startHealthPoll() {
   if (_polling) return;
@@ -95,11 +89,10 @@ export function startHealthPoll() {
       _setConnected(false);
     }
   };
-  poll(); // immediate first check
+  poll();
   setInterval(poll, 5000);
 }
 
-// Axios interceptor — update status on every response / error
 api.interceptors.response.use(
   (res) => {
     _setConnected(true);
@@ -107,14 +100,12 @@ api.interceptors.response.use(
   },
   (err) => {
     if (!err.response) {
-      // Network error (ECONNREFUSED, timeout, etc.)
       _setConnected(false);
     }
     return Promise.reject(err);
   },
 );
 
-// Inference endpoints
 export const inference = {
   run: (text: string, modelName = "french") =>
     api.post("/inference/run", { text, model_name: modelName }),
@@ -130,7 +121,6 @@ export const inference = {
     api.post("/inference/extract-detailed", { text, model_name: modelName }),
 };
 
-// Analysis endpoints
 export const analysis = {
   sparsity: (texts: string[], modelName = "french") =>
     api.post("/analysis/sparsity", { texts, model_name: modelName }),
@@ -162,10 +152,6 @@ export const analysis = {
 
   getConceptCategories: () => api.get("/analysis/concept-categories"),
 
-  /**
-   * Live synapse tracking: send a sentence through the model and get
-   * token-by-token x_sparse activations for specified neurons.
-   */
   synapseTrack: (
     sentence: string,
     synapses: { layer: number; head: number; neuron: number }[],
@@ -178,7 +164,6 @@ export const analysis = {
     }),
 };
 
-// Model endpoints
 export const models = {
   list: () => api.get("/models/list"),
 
@@ -196,7 +181,6 @@ export const models = {
     api.get(`/models/${modelName}/graph`, { params: { threshold } }),
 };
 
-// Visualization endpoints
 export const visualization = {
   playback: (text: string, modelName = "french", includeAttention = false) =>
     api.post("/visualization/playback", {
@@ -213,17 +197,14 @@ export const visualization = {
   getColorScheme: () => api.get("/visualization/color-scheme"),
 };
 
-// Utility function to load playback from static JSON
 export async function loadPlaybackJSON(filename: string) {
   const response = await fetch(`/playback/${filename}`);
   if (!response.ok) throw new Error(`Failed to load ${filename}`);
   return response.json();
 }
 
-// Health check (hits root /health, NOT /api/health)
 export const health = () => axios.get("/health", { timeout: 4000 });
 
- // Graph Brain endpoints
 export const graph = {
   getClusters: (modelName: string, head = 0, beta = 1.0, maxNodes = 400) =>
     api.get(`/graph/clusters/${modelName}`, {
@@ -237,12 +218,7 @@ export const graph = {
       model_name: modelName,
       head,
       layer,
-     }),
+    }),
 
   clearCache: () => api.delete("/graph/cache"),
- };
-<<<<<<< HEAD
-=======
-
-
->>>>>>> 9e749e537713219eb2d9b615a3b5c280ad0f5715
+};
